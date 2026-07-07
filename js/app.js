@@ -114,6 +114,27 @@ function init(){
   renderPins();
   setupPan();
   setupBgParallax();
+  setupBackToTop();
+  setupNavOffset();
+}
+
+/* The top nav wraps to 2-3 rows on narrow screens (logo/buttons/city
+   picker/post button don't all fit on one line), so its real height isn't
+   the fixed 52px the sticky category bar below it assumed - that caused
+   the category bar to sit on top of the wrapped nav instead of under it
+   on mobile. Measuring the actual rendered height keeps them stacked
+   correctly at any width or font-load state. */
+function setupNavOffset(){
+  var nav=document.querySelector(".nav");
+  if(!nav)return;
+  var raf=null;
+  function sync(){document.documentElement.style.setProperty("--nav-h",nav.offsetHeight+"px");}
+  sync();
+  window.addEventListener("resize",function(){
+    if(raf)cancelAnimationFrame(raf);
+    raf=requestAnimationFrame(sync);
+  });
+  if(document.fonts&&document.fonts.ready)document.fonts.ready.then(sync);
 }
 
 /* Background photo drifts and zooms slightly in the direction of whatever
@@ -149,7 +170,10 @@ function load(){
   catch(e){evts=JSON.parse(JSON.stringify(DEF));}
   expire();
 }
-function save(){try{localStorage.setItem(KEY,JSON.stringify(evts));}catch(e){}}
+function save(){
+  try{localStorage.setItem(KEY,JSON.stringify(evts));}
+  catch(e){alert("This flyer couldn't be saved - your browser's local storage is full. Try removing an old flyer or photo, then try again.");}
+}
 function expire(){
   var t=new Date().toISOString().slice(0,10);
   evts.forEach(function(e){if(e.ed&&e.ed<t)e.exp=true;});
@@ -227,6 +251,39 @@ function renderBoards(){
     if(!items.length&&cat!=="venue"&&cat!=="shop"&&cat!=="bars")return;
     bv.appendChild(mkBoard(cat,items));
   });
+  setupCatScrollSpy();
+}
+
+/* Keeps the sticky category bar in sync with whichever board is in view,
+   so it doubles as a "you are here" guide instead of just a set of jump
+   links - lights up the matching pill as the visitor scrolls up or down
+   past a board's frame. Re-run after every renderBoards() since the
+   .bsec sections it observes are rebuilt from scratch each time. */
+var catObserver=null;
+function setupCatScrollSpy(){
+  if(catObserver){catObserver.disconnect();catObserver=null;}
+  var catBtns={};
+  document.querySelectorAll(".cnav .cc[data-cat]").forEach(function(b){catBtns[b.dataset.cat]=b;});
+  var sections=document.querySelectorAll(".bsec");
+  Object.keys(catBtns).forEach(function(k){catBtns[k].classList.remove("on");});
+  if(!sections.length||!("IntersectionObserver" in window))return;
+  catObserver=new IntersectionObserver(function(entries){
+    entries.forEach(function(entry){
+      if(!entry.isIntersecting)return;
+      var cat=entry.target.id.replace("board-","");
+      Object.keys(catBtns).forEach(function(k){catBtns[k].classList.toggle("on",k===cat);});
+    });
+  },{rootMargin:"-100px 0px -70% 0px",threshold:0});
+  sections.forEach(function(s){catObserver.observe(s);});
+}
+
+function setupBackToTop(){
+  var btn=document.getElementById("toTopBtn");
+  if(!btn)return;
+  window.addEventListener("scroll",function(){
+    btn.classList.toggle("show",window.scrollY>420);
+  },{passive:true});
+  btn.addEventListener("click",function(){window.scrollTo({top:0,behavior:"smooth"});});
 }
 
 function mkBoard(cat,items){
@@ -574,7 +631,7 @@ function subForm(){
     expire();save();cls();renderBoards();renderToday();renderPins();
   }
   var pf=document.getElementById("fp2").files[0];
-  if(pf){var rd=new FileReader();rd.onload=function(e){ev.photo=e.target.result;done();};rd.readAsDataURL(pf);}
+  if(pf){resizeImageFile(pf,1100,0.82,function(dataUrl){ev.photo=dataUrl;done();});}
   else done();
 }
 

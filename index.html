@@ -31,14 +31,14 @@
   <button class="pbtn" id="postBtn">+ Post Flyer</button>
 </nav>
 <div class="cnav">
-  <button class="cc market" onclick="jumpTo('market')">Markets</button>
-  <button class="cc foodhall" onclick="jumpTo('foodhall')">Food Hall</button>
-  <button class="cc bars" onclick="jumpTo('bars')">Bars &amp; Restaurants</button>
-  <button class="cc artwalk" onclick="jumpTo('artwalk')">Art Walk</button>
-  <button class="cc cityart" onclick="jumpTo('cityart')">City Art</button>
-  <button class="cc venue" onclick="jumpTo('venue')">Theaters</button>
-  <button class="cc holiday" onclick="jumpTo('holiday')">World Cup</button>
-  <button class="cc shop" onclick="jumpTo('shop')">Shops</button>
+  <button class="cc market" data-cat="market" onclick="jumpTo('market')">Markets</button>
+  <button class="cc foodhall" data-cat="foodhall" onclick="jumpTo('foodhall')">Food Hall</button>
+  <button class="cc bars" data-cat="bars" onclick="jumpTo('bars')">Bars &amp; Restaurants</button>
+  <button class="cc artwalk" data-cat="artwalk" onclick="jumpTo('artwalk')">Art Walk</button>
+  <button class="cc cityart" data-cat="cityart" onclick="jumpTo('cityart')">City Art</button>
+  <button class="cc venue" data-cat="venue" onclick="jumpTo('venue')">Theaters</button>
+  <button class="cc holiday" data-cat="holiday" onclick="jumpTo('holiday')">World Cup</button>
+  <button class="cc shop" data-cat="shop" onclick="jumpTo('shop')">Shops</button>
   <button class="cc" style="background:#4a3520;" id="postBtn2">+ Post Flyer</button>
 </div>
 <div class="hero">
@@ -152,6 +152,7 @@
 <div class="ov" id="frmOv"><div class="fpanel" id="frmPanel"></div></div>
 <div class="ov" id="vfrmOv"><div class="fpanel" id="vfrmPanel"></div></div>
 <div class="zov" id="zOv"><img id="zImg" src="" alt=""></div>
+<button class="totop" id="toTopBtn" title="Back to top" aria-label="Back to top">&#9650;</button>
 <script src="js/app.js"></script>
 <script src="js/storage.js"></script>
 <script src="data/vendors.js"></script>

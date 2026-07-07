@@ -1,6 +1,6 @@
 :root{--w1:#1e0f00;--w2:#3d1e08;--w3:#5a3010;--cl:#dab870;--cr:#fdf6e0;--cr2:#f0e4c0;--ink:#1a0e00;--g:#3d6b42;--bl:#2c5f8a;--go:#b8860b;--re:#c0392b;--pu:#6a4e7a;--br:#7a5230;--cr8:#8B0000;--wn:#6b1e3c;}
 *{box-sizing:border-box;margin:0;padding:0;}
-html,body{overflow-x:hidden;}
+html{overflow-x:hidden;}
 body{font-family:'Libre Franklin',sans-serif;color:var(--ink);background:#1a0800;min-height:100vh;}
 .bg{position:fixed;inset:0;z-index:0;background:linear-gradient(180deg,rgba(15,8,0,.5),rgba(20,10,0,.28) 50%,rgba(12,6,0,.52)),url('../img/background.jpg') center/cover fixed;background-color:#2a1400;filter:grayscale(1) contrast(1.12) brightness(1.1);transform-origin:center center;transition:transform .5s cubic-bezier(.2,.7,.3,1),background-image .4s ease;will-change:transform;}
 .page{position:relative;z-index:1;}
@@ -13,10 +13,11 @@ body{font-family:'Libre Franklin',sans-serif;color:var(--ink);background:#1a0800
 .csel select{font-family:'Special Elite',monospace;font-size:12px;background:rgba(218,184,112,.12);color:var(--cl);border:1px solid rgba(218,184,112,.3);padding:7px 28px 7px 12px;border-radius:16px;cursor:pointer;outline:none;appearance:none;}
 .carr{position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--cl);pointer-events:none;font-size:10px;}
 .pbtn{font-family:'Special Elite',monospace;background:var(--g);color:#fff;border:none;padding:7px 14px;border-radius:16px;cursor:pointer;font-size:11px;flex-shrink:0;}
-.cnav{position:sticky;top:52px;z-index:899;background:rgba(8,4,0,.95);border-bottom:1px solid rgba(218,184,112,.12);display:flex;gap:6px;padding:8px 14px;overflow-x:auto;scrollbar-width:none;}
+.cnav{position:sticky;top:var(--nav-h,52px);z-index:899;background:rgba(8,4,0,.95);border-bottom:1px solid rgba(218,184,112,.12);display:flex;gap:6px;padding:8px 14px;overflow-x:auto;scrollbar-width:none;}
 .cnav::-webkit-scrollbar{display:none;}
 .cc{flex-shrink:0;padding:5px 13px;border-radius:13px;border:none;cursor:pointer;font-size:11px;font-weight:700;color:#fff;opacity:.82;white-space:nowrap;transition:transform .15s,opacity .15s;}
 .cc:hover{transform:scale(1.07);opacity:1;}
+.cc.on{opacity:1;box-shadow:0 0 0 2px rgba(255,255,255,.6) inset,0 3px 10px rgba(0,0,0,.4);}
 .cc.market{background:var(--g);}.cc.foodhall{background:var(--go);}.cc.bars{background:var(--wn);}.cc.artwalk{background:var(--bl);}.cc.cityart{background:var(--pu);}.cc.venue{background:var(--br);}.cc.holiday{background:var(--cr8);}.cc.shop{background:var(--re);}
 .hero{text-align:center;padding:38px 20px 24px;background:radial-gradient(ellipse at 50% 0%,rgba(218,184,112,.14),transparent 65%);}
 .hero h1{font-family:'Special Elite',monospace;font-size:clamp(36px,9vw,64px);color:var(--cl);letter-spacing:3px;text-shadow:0 0 50px rgba(218,184,112,.35),2px 3px 0 rgba(0,0,0,.6);}
@@ -145,6 +146,9 @@ body{font-family:'Libre Franklin',sans-serif;color:var(--ink);background:#1a0800
 .soon p{font-size:13px;margin-top:10px;color:rgba(218,184,112,.3);font-family:'Libre Franklin',sans-serif;}
 footer{text-align:center;color:rgba(200,160,70,.35);font-size:12px;padding:20px 14px 42px;border-top:1px solid rgba(255,255,255,.04);}
 .hidden{display:none!important;}
+.totop{position:fixed;right:16px;bottom:20px;width:44px;height:44px;border-radius:50%;background:rgba(15,8,0,.88);border:1px solid rgba(218,184,112,.4);color:var(--cl);font-size:15px;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:850;opacity:0;pointer-events:none;transform:translateY(12px);transition:opacity .25s,transform .25s,background .2s,color .2s;box-shadow:0 8px 22px rgba(0,0,0,.55);}
+.totop.show{opacity:1;pointer-events:auto;transform:translateY(0);}
+.totop:hover{background:var(--go);color:#fff;}
 @media(max-width:480px){
   .fstrip{gap:8px;padding:0 10px 14px;}
   .pin-slot{flex:0 0 148px;width:148px;}
@@ -155,4 +159,5 @@ footer{text-align:center;color:rgba(200,160,70,.35);font-size:12px;padding:20px 
   #mapSec{padding:0 6px;margin:0 auto 30px;}
   .mframe{padding:6px;}
   .mvp{height:calc(100vh - 210px);min-height:360px;}
+  .totop{right:12px;bottom:14px;width:40px;height:40px;font-size:13px;}
 }
