@@ -116,6 +116,8 @@ function init(){
   setupBgParallax();
   setupBackToTop();
   setupNavOffset();
+  setupBgUpload();
+  setCityBg(curCity);
 }
 
 /* The top nav wraps to 2-3 rows on narrow screens (logo/buttons/city
@@ -196,15 +198,48 @@ function isWeek(ev){return!isToday(ev)&&!ev.exp&&["daily","wed","thu","fri","sat
 
 /* Each city gets its own downtown background photo. Until real photos are
    supplied for Santa Clara/Sunnyvale/Mountain View/Campbell, they fall
-   back to the San Jose photo so the layer never 404s. */
+   back to the San Jose photo so the layer never 404s. A site owner can
+   also upload a custom photo per city from the browser (the camera
+   button by the city picker) - that's stored in localStorage and takes
+   priority over the default file, so swapping in real photos never
+   needs a code change. */
 var CITY_BG={sj:"img/background.jpg",sc:"img/bg-sc.jpg",sv:"img/bg-sv.jpg",mv:"img/bg-mv.jpg",camp:"img/bg-camp.jpg"};
+var curCity="sj";
+function customBgKey(v){return "citybg-"+v;}
 function setCityBg(v){
   var bg=document.querySelector(".bg");if(!bg)return;
-  var file=CITY_BG[v]||CITY_BG.sj;
+  var custom=Storage.get(customBgKey(v),null);
+  var file=custom||CITY_BG[v]||CITY_BG.sj;
   bg.style.backgroundImage="linear-gradient(180deg,rgba(15,8,0,.5),rgba(20,10,0,.28) 50%,rgba(12,6,0,.52)),url('"+file+"')";
+  var bgBtn=document.getElementById("bgBtn"),bgReset=document.getElementById("bgResetBtn");
+  if(bgBtn)bgBtn.classList.toggle("custom",!!custom);
+  if(bgReset)bgReset.classList.toggle("hidden",!custom);
+}
+
+function setupBgUpload(){
+  var btn=document.getElementById("bgBtn"),file=document.getElementById("bgFile"),reset=document.getElementById("bgResetBtn");
+  if(!btn||!file)return;
+  btn.addEventListener("click",function(){file.click();});
+  file.addEventListener("change",function(){
+    var f=file.files[0];file.value="";
+    if(!f)return;
+    resizeImageFile(f,1600,0.85,function(dataUrl){
+      if(!Storage.set(customBgKey(curCity),dataUrl)){
+        alert("This photo couldn't be saved - your browser's local storage is full. Try removing an old flyer or photo, then try again.");
+        return;
+      }
+      setCityBg(curCity);
+    });
+  });
+  if(reset)reset.addEventListener("click",function(){
+    if(!confirm("Remove this city's custom background photo and go back to the default?"))return;
+    Storage.remove(customBgKey(curCity));
+    setCityBg(curCity);
+  });
 }
 
 function setCity(v){
+  curCity=v;
   document.getElementById("citylbl").textContent=CN[v]||v;
   setCityBg(v);
   var bv=document.getElementById("bView");
