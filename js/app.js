@@ -170,8 +170,19 @@ function isToday(ev){
 }
 function isWeek(ev){return!isToday(ev)&&!ev.exp&&["daily","wed","thu","fri","sat","sun","mon","tue","monthly"].indexOf(ev.d)>=0;}
 
+/* Each city gets its own downtown background photo. Until real photos are
+   supplied for Santa Clara/Sunnyvale/Mountain View/Campbell, they fall
+   back to the San Jose photo so the layer never 404s. */
+var CITY_BG={sj:"img/background.jpg",sc:"img/bg-sc.jpg",sv:"img/bg-sv.jpg",mv:"img/bg-mv.jpg",camp:"img/bg-camp.jpg"};
+function setCityBg(v){
+  var bg=document.querySelector(".bg");if(!bg)return;
+  var file=CITY_BG[v]||CITY_BG.sj;
+  bg.style.backgroundImage="linear-gradient(180deg,rgba(15,8,0,.5),rgba(20,10,0,.28) 50%,rgba(12,6,0,.52)),url('"+file+"')";
+}
+
 function setCity(v){
   document.getElementById("citylbl").textContent=CN[v]||v;
+  setCityBg(v);
   var bv=document.getElementById("bView");
   if(v!=="sj"){
     bv.innerHTML="<div class='soon'>"+(CN[v]||v)+"<p>Events coming soon. Be the first to post a flyer!</p></div>";
@@ -278,19 +289,13 @@ function mkPinSlot(card,idx){
   return slot;
 }
 
-/* Each flyer flips in place to reveal the vendors attached to that event
-   (with boost/featured status front and center) instead of only opening
-   the full detail modal. The tilt (from mkPinSlot) is applied to the
-   outer .flyer-flip wrapper so front and back tilt together; the flip
-   rotation itself lives on .flyer-flip-inner, so the two transforms don't
-   collide. */
+/* Tapping a flyer opens the full detail modal directly (it used to flip
+   in place to a small vendor list first — that flip is now the Vendor Hub
+   view reachable from inside the modal via the top-left toggle button,
+   see openDetail/toggleVendorView, which has room to show it properly). */
 function mkFlyer(ev){
   var ico=C[ev.cat]?C[ev.cat].i:"&#128204;";
 
-  var flip=document.createElement("div");flip.className="flyer-flip";flip.id="fflip-"+ev.id;
-  var inner=document.createElement("div");inner.className="flyer-flip-inner";
-
-  var front=document.createElement("div");front.className="flyer-front";
   var fc=document.createElement("div");fc.className="fc"+(ev.exp?" exp":"");
 
   var fimg=document.createElement("div");fimg.className="fimg"+(ev.photo?" hp":"");
@@ -299,9 +304,6 @@ function mkFlyer(ev){
     fimg.innerHTML=ico;
     if(ev.exp){var etag=document.createElement("div");etag.className="etag";etag.textContent="Past";fimg.appendChild(etag);}
   }
-  var infoBtn=document.createElement("button");infoBtn.className="fyf-info";infoBtn.textContent="i";infoBtn.title="Full event info";
-  infoBtn.addEventListener("click",(function(id){return function(e){e.stopPropagation();openDetail(id);};})(ev.id));
-  fimg.appendChild(infoBtn);
 
   var fb=document.createElement("div");fb.className="fb";
   var rib=document.createElement("span");rib.className="rib "+ev.cat;rib.textContent=ev.lbl;
@@ -311,66 +313,8 @@ function mkFlyer(ev){
   fb.appendChild(rib);fb.appendChild(h3);fb.appendChild(fw);fb.appendChild(fa);
 
   fc.appendChild(fimg);fc.appendChild(fb);
-  front.appendChild(fc);
-  front.addEventListener("click",function(){flip.classList.add("flipped");});
-
-  var back=mkFlyerBack(ev,flip);
-
-  inner.appendChild(front);inner.appendChild(back);
-  flip.appendChild(inner);
-  return flip;
-}
-
-function mkFlyerBack(ev,flipEl){
-  var back=document.createElement("div");back.className="flyer-back";
-
-  var hdr=document.createElement("div");hdr.className="fyb-hdr";
-  var h4=document.createElement("h4");h4.textContent="Vendors";
-  var xb=document.createElement("button");xb.className="fyb-x";xb.textContent="×";
-  xb.addEventListener("click",function(e){e.stopPropagation();flipEl.classList.remove("flipped");});
-  hdr.appendChild(h4);hdr.appendChild(xb);
-  back.appendChild(hdr);
-
-  var list=document.createElement("div");list.className="fyb-list";
-  var linked=(typeof eventVendors==="function")?eventVendors(ev):[];
-  linked=linked.slice().sort(function(a,b){
-    var av=(a.featured?2:0)+(a.boost&&a.boost.active?1:0);
-    var bv=(b.featured?2:0)+(b.boost&&b.boost.active?1:0);
-    return bv-av;
-  });
-  if(linked.length){
-    linked.forEach(function(v){
-      var row=document.createElement("div");row.className="fyb-vendor";
-      var nm=document.createElement("span");nm.textContent=v.name;
-      row.appendChild(nm);
-      if(v.featured||(v.boost&&v.boost.active)){
-        var badge=document.createElement("span");badge.className="fyb-badge";
-        badge.textContent=(v.boost&&v.boost.active)?vBoostLabel(v.boost.tier):"Featured";
-        row.appendChild(badge);
-      }
-      row.addEventListener("click",(function(id){return function(e){e.stopPropagation();openVendorDetail(id);};})(v.id));
-      list.appendChild(row);
-    });
-  }else{
-    var none=document.createElement("div");none.className="fyb-none";
-    none.textContent="No vendors listed yet.";
-    list.appendChild(none);
-  }
-  back.appendChild(list);
-
-  var cta=document.createElement("div");cta.className="fyb-cta";
-  cta.textContent="Want your business seen here? Boost or feature your listing.";
-  back.appendChild(cta);
-
-  var footer=document.createElement("div");footer.className="fyb-footer";
-  var addBtn=document.createElement("button");addBtn.className="fyb-btn add";addBtn.textContent="+ Add Vendor";
-  addBtn.addEventListener("click",(function(cat,eid){return function(e){e.stopPropagation();openVendorForm(cat,"",eid);};})(ev.cat,ev.id));
-  var flipBtn=document.createElement("button");flipBtn.className="fyb-btn back";flipBtn.textContent="Flip Back";
-  flipBtn.addEventListener("click",function(e){e.stopPropagation();flipEl.classList.remove("flipped");});
-  footer.appendChild(addBtn);footer.appendChild(flipBtn);
-  back.appendChild(footer);
-
-  return back;
+  fc.addEventListener("click",function(){openDetail(ev.id);});
+  return fc;
 }
 
 function openDetail(id){
@@ -385,12 +329,17 @@ function openDetail(id){
   var xb=document.createElement("button");xb.className="xbtn";xb.textContent="X";
   xb.onclick=cls;dp.appendChild(xb);
 
+  var vhBtn=document.createElement("button");vhBtn.className="xbtnL";vhBtn.id="vhToggle";
+  vhBtn.innerHTML="&#128722;";vhBtn.title="Vendor Hub";
+  vhBtn.onclick=function(e){e.stopPropagation();toggleVendorView();};
+  dp.appendChild(vhBtn);
+
   var hero=document.createElement("div");hero.className="dhero"+(ev.photo?" hp":"");
   if(ev.photo){hero.style.backgroundImage="url("+ev.photo+")";hero.style.backgroundSize="cover";hero.style.backgroundPosition="center";}
   else{hero.innerHTML=ico;}
   dp.appendChild(hero);
 
-  var body=document.createElement("div");body.className="dbody";
+  var body=document.createElement("div");body.className="dbody";body.id="infoView";
 
   var rib=document.createElement("span");rib.className="rib "+ev.cat;rib.style.marginBottom="9px";rib.textContent=ev.lbl;
   var h2=document.createElement("h2");h2.textContent=ev.t;
@@ -425,23 +374,62 @@ function openDetail(id){
   if(ev.fd)igrid.appendChild(mkIbox("From Diridon",ev.fd));
   body.appendChild(igrid);
 
-  var regVendors=typeof eventVendors==="function"?eventVendors(ev):[];
-  if(regVendors.length){
-    var rvsec=document.createElement("div");rvsec.className="vsec";
-    var rvh3=document.createElement("h3");rvh3.textContent="Registered Vendors";
-    rvsec.appendChild(rvh3);
-    regVendors.forEach(function(v){
-      var rvi=document.createElement("div");rvi.className="vi";rvi.style.cursor="pointer";
-      var vcat=C[v.cat]?C[v.cat].l:v.cat;
-      rvi.innerHTML="<strong>"+v.name+"</strong> &middot; "+vcat+(v.featured?" &middot; Featured":"")+(v.boost&&v.boost.active?" &middot; "+vBoostLabel(v.boost.tier):"");
-      rvi.addEventListener("click",(function(vid){return function(){openVendorDetail(vid);};})(v.id));
-      rvsec.appendChild(rvi);
+  var btns=document.createElement("div");btns.className="dbtnrow";
+  var sh=document.createElement("button");sh.className="ab gray";sh.textContent="Share";sh.onclick=(function(id){return function(){shareEv(id);};})(ev.id);
+  var ed=document.createElement("button");ed.className="ab green";ed.textContent="Edit";ed.onclick=(function(id){return function(){editEv(id);};})(ev.id);
+  var dl=document.createElement("button");dl.className="ab dark";dl.textContent="Remove";dl.onclick=(function(id){return function(){delEv(id);};})(ev.id);
+  btns.appendChild(sh);btns.appendChild(ed);btns.appendChild(dl);
+  body.appendChild(btns);
+
+  dp.appendChild(body);
+  dp.appendChild(buildVendorHub(ev));
+  document.getElementById("detOv").classList.add("on");
+  hPin(id);
+}
+
+/* The bigger Vendor Hub view for an event, reached via the top-left toggle
+   button in openDetail instead of the old small in-card flip. Combines the
+   registered-vendor list (boost/featured sorted, tap to open a vendor's
+   own page) with the free-text vendor directory groups. */
+function buildVendorHub(ev){
+  var vhub=document.createElement("div");vhub.className="dbody";vhub.id="vhubView";vhub.style.display="none";
+
+  var vh2=document.createElement("h2");vh2.textContent="Vendor Hub";
+  var vsub=document.createElement("div");vsub.className="dw";vsub.textContent=ev.t;
+  vhub.appendChild(vh2);vhub.appendChild(vsub);
+
+  var linked=(typeof eventVendors==="function"?eventVendors(ev):[]).slice().sort(function(a,b){
+    var av=(a.featured?2:0)+(a.boost&&a.boost.active?1:0);
+    var bv=(b.featured?2:0)+(b.boost&&b.boost.active?1:0);
+    return bv-av;
+  });
+  var list=document.createElement("div");list.className="vhub-list";
+  if(linked.length){
+    linked.forEach(function(v){
+      var row=document.createElement("div");row.className="vhub-row";
+      var nm=document.createElement("span");nm.className="vhub-name";nm.textContent=v.name;
+      row.appendChild(nm);
+      if(v.featured||(v.boost&&v.boost.active)){
+        var badge=document.createElement("span");badge.className="vhub-badge";
+        badge.textContent=(v.boost&&v.boost.active)?vBoostLabel(v.boost.tier):"Featured";
+        row.appendChild(badge);
+      }
+      row.addEventListener("click",(function(vid){return function(){openVendorDetail(vid);};})(v.id));
+      list.appendChild(row);
     });
-    var addV=document.createElement("button");addV.className="sugbtn";addV.textContent="+ Add Your Business";
-    addV.onclick=(function(cat,eid){return function(){openVendorForm(cat,"",eid);};})(ev.cat,ev.id);
-    rvsec.appendChild(addV);
-    body.appendChild(rvsec);
+  }else{
+    var none=document.createElement("div");none.className="vhub-none";none.textContent="No vendors listed yet.";
+    list.appendChild(none);
   }
+  vhub.appendChild(list);
+
+  var cta=document.createElement("div");cta.className="vhub-cta";
+  cta.textContent="Want your business seen here? Boost or feature your listing.";
+  vhub.appendChild(cta);
+
+  var addV=document.createElement("button");addV.className="sugbtn";addV.textContent="+ Add Your Business";
+  addV.onclick=(function(cat,eid){return function(){openVendorForm(cat,"",eid);};})(ev.cat,ev.id);
+  vhub.appendChild(addV);
 
   if(ev.vg&&ev.vg.length){
     var vsec=document.createElement("div");vsec.className="vsec";
@@ -468,19 +456,23 @@ function openDetail(id){
     var sug=document.createElement("button");sug.className="sugbtn";sug.textContent="+ Suggest a vendor";
     sug.onclick=(function(id){return function(){openSug(id);};})(ev.id);
     vsec.appendChild(sug);
-    body.appendChild(vsec);
+    vhub.appendChild(vsec);
   }
 
-  var btns=document.createElement("div");btns.className="dbtnrow";
-  var sh=document.createElement("button");sh.className="ab gray";sh.textContent="Share";sh.onclick=(function(id){return function(){shareEv(id);};})(ev.id);
-  var ed=document.createElement("button");ed.className="ab green";ed.textContent="Edit";ed.onclick=(function(id){return function(){editEv(id);};})(ev.id);
-  var dl=document.createElement("button");dl.className="ab dark";dl.textContent="Remove";dl.onclick=(function(id){return function(){delEv(id);};})(ev.id);
-  btns.appendChild(sh);btns.appendChild(ed);btns.appendChild(dl);
-  body.appendChild(btns);
+  return vhub;
+}
 
-  dp.appendChild(body);
-  document.getElementById("detOv").classList.add("on");
-  hPin(id);
+function toggleVendorView(){
+  var info=document.getElementById("infoView"),vhub=document.getElementById("vhubView"),btn=document.getElementById("vhToggle");
+  if(!info||!vhub||!btn)return;
+  var showingHub=vhub.style.display!=="none";
+  if(showingHub){
+    vhub.style.display="none";info.style.display="block";
+    btn.innerHTML="&#128722;";btn.title="Vendor Hub";
+  }else{
+    info.style.display="none";vhub.style.display="block";
+    btn.innerHTML="&#8505;";btn.title="Event Info";
+  }
 }
 
 function vFilter(btn){
