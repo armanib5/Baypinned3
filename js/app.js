@@ -502,6 +502,8 @@ function openDetail(id){
   var dp=document.getElementById("detPanel");
   dp.innerHTML="";
   dp.dataset.eid=id;
+  delete dp.dataset.vid;
+  delete dp.dataset.fromEvent;
 
   var xb=document.createElement("button");xb.className="xbtn";xb.textContent="X";
   xb.onclick=cls;dp.appendChild(xb);
@@ -575,10 +577,14 @@ function buildVendorHub(ev){
   var vsub=document.createElement("div");vsub.className="dw";vsub.textContent=ev.t;
   vhub.appendChild(vh2);vhub.appendChild(vsub);
 
+  /* Sort/badge purely from real purchased promotions (js/promo.js),
+     scoped to this specific event - a vendor with no active/upcoming
+     promotion here shows no badge at all (no "Free Vendor" label). */
   var linked=(typeof eventVendors==="function"?eventVendors(ev):[]).slice().sort(function(a,b){
-    var av=(a.featured?2:0)+(a.boost&&a.boost.active?1:0);
-    var bv=(b.featured?2:0)+(b.boost&&b.boost.active?1:0);
-    return bv-av;
+    var av=vendorPromoBadges(a.id,ev.id),bv=vendorPromoBadges(b.id,ev.id);
+    var ascore=(av.featured?2:0)+(av.boostActive?1:0);
+    var bscore=(bv.featured?2:0)+(bv.boostActive?1:0);
+    return bscore-ascore;
   });
   var list=document.createElement("div");list.className="vhub-list";
   if(linked.length){
@@ -586,9 +592,10 @@ function buildVendorHub(ev){
       var row=document.createElement("div");row.className="vhub-row";
       var nm=document.createElement("span");nm.className="vhub-name";nm.textContent=v.name;
       row.appendChild(nm);
-      if(v.featured||(v.boost&&v.boost.active)){
+      var pb=vendorPromoBadges(v.id,ev.id);
+      if(pb.featured||pb.boostActive){
         var badge=document.createElement("span");badge.className="vhub-badge";
-        badge.textContent=(v.boost&&v.boost.active)?vBoostLabel(v.boost.tier):"Featured";
+        badge.textContent=pb.boostActive?"Boost Live":"Featured";
         row.appendChild(badge);
       }
       row.addEventListener("click",(function(vid,eid){return function(){openVendorDetail(vid,eid);};})(v.id,ev.id));

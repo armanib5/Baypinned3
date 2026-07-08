@@ -41,11 +41,6 @@ function eventVendors(ev) {
   return vendors.filter(function (v) { return (v.events || []).indexOf(ev.id) >= 0; });
 }
 
-function vBoostLabel(tier) {
-  var labels = { flash: "Flash Boost", anchor: "Event Anchor", hood: "Neighborhood" };
-  return labels[tier] || "Boosted";
-}
-
 /* Vendor profile detail — reuses the same .dpanel/.dhero/.dbody/.igrid
    markup the event detail modal already uses, so it looks consistent
    without needing its own CSS. */
@@ -55,6 +50,9 @@ function openVendorDetail(id, fromEventId) {
   var mu = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(v.address || v.name);
   var dp = document.getElementById("detPanel");
   dp.innerHTML = "";
+  dp.dataset.vid = id;
+  dp.dataset.fromEvent = fromEventId || "";
+  delete dp.dataset.eid;
 
   var xb = document.createElement("button"); xb.className = "xbtn"; xb.textContent = "X";
   xb.onclick = cls; dp.appendChild(xb);
@@ -80,10 +78,15 @@ function openVendorDetail(id, fromEventId) {
   var h2 = document.createElement("h2"); h2.textContent = v.name;
   body.appendChild(rib); body.appendChild(h2);
 
-  if (v.featured || (v.boost && v.boost.active)) {
+  /* Badges reflect real purchased promotions (js/promo.js), scoped per
+     event - a vendor with no active/upcoming promotion anywhere shows no
+     badge at all, same as any other listing (no "Free Vendor" label). */
+  var anyFeatured = (v.events || []).some(function (eid) { return vendorPromoBadges(v.id, eid).featured; });
+  var anyBoost = (v.events || []).some(function (eid) { return vendorPromoBadges(v.id, eid).boostActive; });
+  if (anyFeatured || anyBoost) {
     var badges = document.createElement("div"); badges.style.cssText = "display:flex;gap:6px;margin:4px 0 8px;flex-wrap:wrap;";
-    if (v.featured) { var fb = document.createElement("span"); fb.className = "dtag"; fb.style.cssText = "background:var(--go);color:#fff;border:none;"; fb.textContent = "Featured"; badges.appendChild(fb); }
-    if (v.boost && v.boost.active) { var bb = document.createElement("span"); bb.className = "dtag"; bb.style.cssText = "background:var(--g);color:#fff;border:none;"; bb.textContent = vBoostLabel(v.boost.tier); badges.appendChild(bb); }
+    if (anyFeatured) { var fb = document.createElement("span"); fb.className = "promo-badge featured"; fb.textContent = "Featured"; badges.appendChild(fb); }
+    if (anyBoost) { var bb = document.createElement("span"); bb.className = "promo-badge boost"; bb.textContent = "Boost Live"; badges.appendChild(bb); }
     body.appendChild(badges);
   }
 
@@ -120,8 +123,17 @@ function openVendorDetail(id, fromEventId) {
     var vh3 = document.createElement("h3"); vh3.textContent = "Upcoming Events";
     vsec.appendChild(vh3);
     vEvts.forEach(function (ev) {
-      var vi = document.createElement("div"); vi.className = "vi"; vi.style.cursor = "pointer";
-      vi.textContent = ev.t + " — " + ev.w;
+      var vi = document.createElement("div"); vi.className = "vi"; vi.style.cssText = "cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;";
+      var lbl = document.createElement("span"); lbl.textContent = ev.t + " — " + ev.w;
+      vi.appendChild(lbl);
+      var badges = vendorPromoBadges(v.id, ev.id);
+      if (badges.featured || badges.boostActive || badges.boostUpcoming) {
+        var bwrap = document.createElement("span"); bwrap.style.cssText = "display:flex;gap:4px;flex-shrink:0;";
+        if (badges.featured) { var fb2 = document.createElement("span"); fb2.className = "promo-badge featured"; fb2.textContent = "Featured"; bwrap.appendChild(fb2); }
+        if (badges.boostActive) { var bb2 = document.createElement("span"); bb2.className = "promo-badge boost"; bb2.textContent = "Boost Live"; bwrap.appendChild(bb2); }
+        else if (badges.boostUpcoming) { var ub = document.createElement("span"); ub.className = "promo-badge upcoming"; ub.textContent = "Boost Soon"; bwrap.appendChild(ub); }
+        vi.appendChild(bwrap);
+      }
       vi.addEventListener("click", function () { openDetail(ev.id); });
       vsec.appendChild(vi);
     });
@@ -142,9 +154,11 @@ function openVendorDetail(id, fromEventId) {
   dirBtn.textContent = "Directions";
   var editBtn = document.createElement("button"); editBtn.className = "ab dark"; editBtn.textContent = "Edit";
   editBtn.addEventListener("click", function () { openVendorForm(v.cat, v.id); });
+  var promoBtn = document.createElement("button"); promoBtn.className = "ab green"; promoBtn.textContent = "🚀 Promote";
+  promoBtn.addEventListener("click", function () { openPromoPicker(v.id); });
   var msgBtn = document.createElement("button"); msgBtn.className = "ab gray"; msgBtn.disabled = true;
   msgBtn.style.opacity = ".5"; msgBtn.textContent = "Message (Coming Soon)";
-  btns.appendChild(favBtn); btns.appendChild(shareBtn); btns.appendChild(mapBtn2); btns.appendChild(dirBtn); btns.appendChild(editBtn); btns.appendChild(msgBtn);
+  btns.appendChild(favBtn); btns.appendChild(shareBtn); btns.appendChild(mapBtn2); btns.appendChild(dirBtn); btns.appendChild(editBtn); btns.appendChild(promoBtn); btns.appendChild(msgBtn);
   body.appendChild(btns);
 
   dp.appendChild(body);
@@ -218,7 +232,8 @@ function showAdmin() {
   document.getElementById("tdwrap").style.display = "none";
   document.getElementById("mapSec").style.display = "none";
   document.getElementById("adminSec").style.display = "block";
-  renderAdminList();
+  if (typeof showAdminTab === "function") showAdminTab("vendors");
+  else renderAdminList();
 }
 function renderAdminList() {
   var list = document.getElementById("adminList");
@@ -241,18 +256,13 @@ function renderAdminList() {
     rejectBtn.onclick = function () { v.status = "rejected"; saveVendors(); renderAdminList(); };
     row.appendChild(approveBtn); row.appendChild(rejectBtn);
 
-    ["flash", "anchor", "hood"].forEach(function (tier) {
-      var isOn = v.boost && v.boost.active && v.boost.tier === tier;
-      var btn = document.createElement("button");
-      btn.className = "nb" + (isOn ? " on" : "");
-      btn.textContent = vBoostLabel(tier);
-      btn.onclick = function () {
-        if (isOn) v.boost = { tier: null, active: false, until: "", radius: null };
-        else v.boost = { tier: tier, active: true, until: "", radius: tier === "hood" ? 1 : null };
-        saveVendors(); renderAdminList();
-      };
-      row.appendChild(btn);
-    });
+    var promoCount = typeof getBookings === "function"
+      ? getBookings().filter(function (b) { return b.vendorId === v.id && b.status !== "cancelled"; }).length
+      : 0;
+    var bkBtn = document.createElement("button");
+    bkBtn.className = "nb"; bkBtn.textContent = promoCount ? "Bookings (" + promoCount + ")" : "Bookings";
+    bkBtn.onclick = function () { showAdminTab("bookings"); };
+    row.appendChild(bkBtn);
 
     list.appendChild(row);
   });
@@ -320,6 +330,7 @@ function subVendorForm() {
     mx: 380 + (Math.random() - 0.5) * 120, my: 420 + (Math.random() - 0.5) * 80,
     city: "sj", events: eventId ? [eventId] : [], gallery: [], logo: "", cover: "", status: "pending"
   };
+  var isNew = !vid;
   function done() {
     if (vid) {
       var i = vendors.findIndex(function (x) { return x.id === vid; });
@@ -334,9 +345,18 @@ function subVendorForm() {
       }
     } else vendors.push(v);
     saveVendors(); vCls(); renderVendorPins();
+    if (typeof markMyVendor === "function") markMyVendor(v.id);
+    if (typeof updateDashNavVisibility === "function") updateDashNavVisibility();
     if (typeof renderBoards === "function") renderBoards();
     if (document.getElementById("detOv").classList.contains("on") && document.getElementById("detPanel").dataset.eid) {
       openDetail(document.getElementById("detPanel").dataset.eid);
+    }
+    /* Prompt Premium Promotion right after a NEW listing is created (not
+       on every edit, which would get old fast) - the small delay lets
+       vCls()/openDetail() above finish settling before the promo
+       overlay stacks on top. */
+    if (isNew && typeof openPromoPicker === "function") {
+      setTimeout(function () { openPromoPicker(v.id); }, 250);
     }
   }
   var logoFile = document.getElementById("vlg").files[0];

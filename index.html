@@ -16,6 +16,7 @@
     <button class="nb on" id="nB" onclick="showBoards()">Boards</button>
     <button class="nb" id="nM" onclick="showMap()">Map</button>
     <button class="nb" onclick="scrollToday()">Today</button>
+    <button class="nb" id="nDash" style="display:none;" onclick="openVendorDashboard()">My Dashboard</button>
     <button class="nb" id="nAdmin" style="display:none;" onclick="showAdmin()">Admin</button>
   </div>
   <div class="csel">
@@ -149,20 +150,41 @@
   </div>
 </section>
 <section id="adminSec" style="max-width:1060px;margin:0 auto;padding:0 14px 20px;display:none;">
-  <div class="sh" style="margin-bottom:12px;"><h2 style="font-family:'Special Elite',monospace;color:var(--cl);font-size:20px;">Admin - Vendor Moderation</h2></div>
-  <p style="color:rgba(218,184,112,.5);font-size:12.5px;margin-bottom:14px;">Placeholder moderation queue. Approve new listings and manage boosts until real accounts/roles exist.</p>
-  <div id="adminList" style="display:flex;flex-direction:column;gap:8px;"></div>
+  <div class="sh" style="margin-bottom:6px;"><h2 style="font-family:'Special Elite',monospace;color:var(--cl);font-size:20px;">Admin Dashboard</h2></div>
+  <p style="color:rgba(218,184,112,.5);font-size:12.5px;margin-bottom:14px;">Placeholder admin tools until real accounts/roles exist - anyone with the ?admin=1 link can reach this.</p>
+  <div class="admintabs">
+    <button class="admintab on" data-tab="vendors" onclick="showAdminTab('vendors')">Vendors</button>
+    <button class="admintab" data-tab="bookings" onclick="showAdminTab('bookings')">Bookings</button>
+    <button class="admintab" data-tab="pricing" onclick="showAdminTab('pricing')">Pricing</button>
+    <button class="admintab" data-tab="hours" onclick="showAdminTab('hours')">Event Hours</button>
+  </div>
+  <div class="admintabpanel" id="adminTabVendors">
+    <div id="adminList" style="display:flex;flex-direction:column;gap:8px;"></div>
+  </div>
+  <div class="admintabpanel" id="adminTabBookings" style="display:none;">
+    <div id="adminBookingsList" style="display:flex;flex-direction:column;gap:8px;"></div>
+  </div>
+  <div class="admintabpanel" id="adminTabPricing" style="display:none;">
+    <div id="adminPricingForm"></div>
+  </div>
+  <div class="admintabpanel" id="adminTabHours" style="display:none;">
+    <div id="adminHoursForm"></div>
+  </div>
 </section>
 <footer>Pinned SJ &middot; Downtown San Jose &middot; Free for locals &middot; Pay only when you want to be featured</footer>
 </div>
 <div class="ov" id="detOv"><div class="dpanel" id="detPanel"></div></div>
 <div class="ov" id="frmOv"><div class="fpanel" id="frmPanel"></div></div>
 <div class="ov" id="vfrmOv"><div class="fpanel" id="vfrmPanel"></div></div>
+<div class="ov" id="promoOv"><div class="fpanel" id="promoPanel"></div></div>
+<div class="ov" id="dashOv"><div class="fpanel wide" id="dashPanel"></div></div>
 <div class="zov" id="zOv"><img id="zImg" src="" alt=""></div>
 <button class="totop" id="toTopBtn" title="Back to top" aria-label="Back to top">&#9650;</button>
 <script src="js/app.js"></script>
 <script src="js/storage.js"></script>
 <script src="data/vendors.js"></script>
 <script src="js/vendors.js"></script>
+<script src="js/promo.js"></script>
+<script src="js/promo-ui.js"></script>
 </body>
 </html>
