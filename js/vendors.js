@@ -10,7 +10,11 @@ var VDATA_KEY = "vendors-v1";
 function loadVendors() {
   vendors = Storage.get(VDATA_KEY, null) || JSON.parse(JSON.stringify(VENDOR_DEF));
 }
-function saveVendors() { Storage.set(VDATA_KEY, vendors); }
+function saveVendors() {
+  if (!Storage.set(VDATA_KEY, vendors)) {
+    alert("This business couldn't be saved - your browser's local storage is full. Try removing an old photo, then try again.");
+  }
+}
 
 /* Runs immediately (not inside DOMContentLoaded) so `vendors` is already
    populated by the time app.js's init() renders the boards - both files
@@ -45,7 +49,7 @@ function vBoostLabel(tier) {
 /* Vendor profile detail — reuses the same .dpanel/.dhero/.dbody/.igrid
    markup the event detail modal already uses, so it looks consistent
    without needing its own CSS. */
-function openVendorDetail(id) {
+function openVendorDetail(id, fromEventId) {
   var v = vendors.find(function (x) { return x.id === id; }); if (!v) return;
   var cat = C[v.cat] || { l: v.cat, i: "&#128204;", c: "#666" };
   var mu = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(v.address || v.name);
@@ -54,6 +58,16 @@ function openVendorDetail(id) {
 
   var xb = document.createElement("button"); xb.className = "xbtn"; xb.textContent = "X";
   xb.onclick = cls; dp.appendChild(xb);
+
+  /* Only vendors opened from inside an event's Vendor Hub list carry a
+     fromEventId - map-pin/search-opened vendors have nowhere to "go
+     back" to, so they keep just the X close button. */
+  if (fromEventId) {
+    var backBtn = document.createElement("button"); backBtn.className = "vhbtn back";
+    backBtn.innerHTML = "&#8592; Back to Vendor Hub"; backBtn.title = "Back to Vendor Hub";
+    backBtn.onclick = function (e) { e.stopPropagation(); backToVendorHub(fromEventId); };
+    dp.appendChild(backBtn);
+  }
 
   var hero = document.createElement("div"); hero.className = "dhero" + (v.cover ? " hp" : "");
   if (v.cover) { hero.style.backgroundImage = "url(" + v.cover + ")"; hero.style.backgroundSize = "cover"; hero.style.backgroundPosition = "center"; }
@@ -146,6 +160,22 @@ function shareVendor(id) {
 function showVendorOnMap(id) {
   showMap();
   hVendorPin(id);
+}
+
+/* Returns from a vendor's own detail page to the event flyer it was
+   opened from, landing back on that event's Vendor Hub face (not the
+   event-info face) so it feels like a "back" step rather than starting
+   over from the flyer's front. */
+function backToVendorHub(eventId) {
+  openDetail(eventId);
+  setTimeout(function () {
+    var info = document.getElementById("infoView"), vhub = document.getElementById("vhubView"), btn = document.getElementById("vhToggle");
+    if (info && vhub && btn) {
+      info.style.display = "none"; vhub.style.display = "block";
+      btn.innerHTML = "&#8617; Back to Flyer"; btn.title = "Back to Event Flyer";
+      btn.classList.add("back");
+    }
+  }, 30);
 }
 
 /* ── MAP PINS (square markers, distinct from the round event pins) ── */
@@ -312,15 +342,13 @@ function subVendorForm() {
   var logoFile = document.getElementById("vlg").files[0];
   var coverFile = document.getElementById("vcv").files[0];
   if (coverFile) {
-    var rd = new FileReader();
-    rd.onload = function (e) {
-      v.cover = e.target.result;
-      if (logoFile) { var rd2 = new FileReader(); rd2.onload = function (e2) { v.logo = e2.target.result; done(); }; rd2.readAsDataURL(logoFile); }
+    resizeImageFile(coverFile, 1100, 0.82, function (dataUrl) {
+      v.cover = dataUrl;
+      if (logoFile) resizeImageFile(logoFile, 300, 0.85, function (logoUrl) { v.logo = logoUrl; done(); });
       else done();
-    };
-    rd.readAsDataURL(coverFile);
+    });
   } else if (logoFile) {
-    var rd3 = new FileReader(); rd3.onload = function (e3) { v.logo = e3.target.result; done(); }; rd3.readAsDataURL(logoFile);
+    resizeImageFile(logoFile, 300, 0.85, function (logoUrl) { v.logo = logoUrl; done(); });
   } else done();
 }
 

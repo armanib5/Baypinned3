@@ -4,12 +4,35 @@ var C={
   bars:{l:"Bars & Restaurants",i:"&#127864;",c:"#6b1e3c"},
   artwalk:{l:"Art Walk",i:"&#127912;",c:"#2c5f8a"},
   cityart:{l:"City Art",i:"&#127917;",c:"#6a4e7a"},
+  parks:{l:"Parks",i:"&#127795;",c:"#5a8c3a"},
   venue:{l:"Theaters",i:"&#127963;",c:"#7a5230"},
   holiday:{l:"Holiday",i:"&#9917;",c:"#8B0000"},
   shop:{l:"Shops",i:"&#128717;",c:"#c0392b"}
 };
-var ORD=["market","foodhall","bars","artwalk","cityart","venue","holiday","shop"];
+var ORD=["market","foodhall","bars","artwalk","cityart","parks","venue","holiday","shop"];
 var CN={sj:"San Jose, CA",sc:"Santa Clara, CA",sv:"Sunnyvale, CA",mv:"Mountain View, CA",camp:"Campbell, CA"};
+var CITY_ABBR={sj:"SJ",sc:"SC",sv:"SV",mv:"MV",camp:"Camp"};
+function setBrand(v){
+  var name="BayPinned "+(CITY_ABBR[v]||v.toUpperCase());
+  var el=document.getElementById("brandName");
+  if(el)el.textContent=name;
+  document.title=name;
+}
+/* San Jose's mini-city neighborhoods - same list/order/ids as the
+   HOODS array in baypinnedmap1/data/places.js, so a flyer's hood tag
+   lines up with that map's pins once the two sites combine. Events
+   with no hood field are treated as "downtown" (all of today's seed
+   data is downtown San Jose). Only San Jose has this wired up for now;
+   other cities keep their existing single-board "coming soon" view. */
+var HOODS_SJ=[
+  {id:"downtown",l:"Downtown San Jose"},
+  {id:"japantown",l:"Japantown"},
+  {id:"santana",l:"Santana Row & Valley Fair"},
+  {id:"willow",l:"Willow Glen"},
+  {id:"alum",l:"Alum Rock"},
+  {id:"east",l:"East San Jose"}
+];
+var curHood="downtown";
 var DEF=[
 {id:"fm",cat:"market",lbl:"Weekly Market",exp:false,
  t:"Downtown SJ Farmers Market",w:"Wednesdays 9:00am - 1:30pm",d:"wed",
@@ -109,11 +132,38 @@ document.getElementById("postBtn2").onclick=function(){openForm("");};
 
 function init(){
   load();
+  setBrand(curCity);
+  renderHoodRow();
   renderToday();
   renderBoards();
   renderPins();
   setupPan();
   setupBgParallax();
+  setupBackToTop();
+  setupStickyOffsetWatcher();
+  setupBgUpload();
+  setCityBg(curCity,curHood);
+}
+
+/* The top nav wraps to 2-3 rows on narrow screens (logo/buttons/city
+   picker/post button don't all fit on one line), and the neighborhood
+   row only exists at all for San Jose - so neither the sticky hood row
+   nor the sticky category bar below it can assume a fixed pixel offset.
+   Measuring the actual rendered heights keeps the nav -> hoodrow -> cnav
+   stack aligned at any width, hood count, or font-load state. */
+function syncStickyOffsets(){
+  var nav=document.querySelector(".nav"),hood=document.getElementById("hoodRow");
+  if(nav)document.documentElement.style.setProperty("--nav-h",nav.offsetHeight+"px");
+  if(hood)document.documentElement.style.setProperty("--hood-h",hood.offsetHeight+"px");
+}
+function setupStickyOffsetWatcher(){
+  var raf=null;
+  syncStickyOffsets();
+  window.addEventListener("resize",function(){
+    if(raf)cancelAnimationFrame(raf);
+    raf=requestAnimationFrame(syncStickyOffsets);
+  });
+  if(document.fonts&&document.fonts.ready)document.fonts.ready.then(syncStickyOffsets);
 }
 
 /* Background photo drifts and zooms slightly in the direction of whatever
@@ -149,7 +199,10 @@ function load(){
   catch(e){evts=JSON.parse(JSON.stringify(DEF));}
   expire();
 }
-function save(){try{localStorage.setItem(KEY,JSON.stringify(evts));}catch(e){}}
+function save(){
+  try{localStorage.setItem(KEY,JSON.stringify(evts));}
+  catch(e){alert("This flyer couldn't be saved - your browser's local storage is full. Try removing an old flyer or photo, then try again.");}
+}
 function expire(){
   var t=new Date().toISOString().slice(0,10);
   evts.forEach(function(e){if(e.ed&&e.ed<t)e.exp=true;});
@@ -172,17 +225,96 @@ function isWeek(ev){return!isToday(ev)&&!ev.exp&&["daily","wed","thu","fri","sat
 
 /* Each city gets its own downtown background photo. Until real photos are
    supplied for Santa Clara/Sunnyvale/Mountain View/Campbell, they fall
-   back to the San Jose photo so the layer never 404s. */
+   back to the San Jose photo so the layer never 404s. A site owner can
+   also upload a custom photo per city from the browser (the camera
+   button by the city picker) - that's stored in localStorage and takes
+   priority over the default file, so swapping in real photos never
+   needs a code change. */
 var CITY_BG={sj:"img/background.jpg",sc:"img/bg-sc.jpg",sv:"img/bg-sv.jpg",mv:"img/bg-mv.jpg",camp:"img/bg-camp.jpg"};
-function setCityBg(v){
+var curCity="sj";
+function customBgKey(city,hood){return hood?("citybg-"+city+"-"+hood):("citybg-"+city);}
+function hoodLabel(id){var h=HOODS_SJ.find(function(x){return x.id===id;});return h?h.l:id;}
+function setCityBg(city,hood){
   var bg=document.querySelector(".bg");if(!bg)return;
-  var file=CITY_BG[v]||CITY_BG.sj;
+  var custom=Storage.get(customBgKey(city,hood),null);
+  /* Downtown SJ's custom photo used to live under the plain "citybg-sj"
+     key before neighborhoods existed - fall back to it so an
+     already-uploaded photo doesn't quietly vanish now that downtown is
+     also a hood. */
+  if(!custom&&hood==="downtown")custom=Storage.get(customBgKey(city),null);
+  var file=custom||CITY_BG[city]||CITY_BG.sj;
   bg.style.backgroundImage="linear-gradient(180deg,rgba(15,8,0,.5),rgba(20,10,0,.28) 50%,rgba(12,6,0,.52)),url('"+file+"')";
+  var bgBtn=document.getElementById("bgBtn"),bgReset=document.getElementById("bgResetBtn");
+  if(bgBtn)bgBtn.classList.toggle("custom",!!custom);
+  if(bgReset)bgReset.classList.toggle("hidden",!custom);
+  var label=city==="sj"&&hood?hoodLabel(hood):(CN[city]||city);
+  if(bgBtn){bgBtn.title="Change background photo for "+label;bgBtn.setAttribute("aria-label","Change background photo for "+label);}
+  if(bgReset){bgReset.title="Reset "+label+"'s background photo";bgReset.setAttribute("aria-label","Reset "+label+"'s background photo");}
+}
+
+function setupBgUpload(){
+  var btn=document.getElementById("bgBtn"),file=document.getElementById("bgFile"),reset=document.getElementById("bgResetBtn");
+  if(!btn||!file)return;
+  btn.addEventListener("click",function(){file.click();});
+  file.addEventListener("change",function(){
+    var f=file.files[0];file.value="";
+    if(!f)return;
+    var hood=curCity==="sj"?curHood:null;
+    resizeImageFile(f,1600,0.85,function(dataUrl){
+      if(!Storage.set(customBgKey(curCity,hood),dataUrl)){
+        alert("This photo couldn't be saved - your browser's local storage is full. Try removing an old flyer or photo, then try again.");
+        return;
+      }
+      setCityBg(curCity,hood);
+    });
+  });
+  if(reset)reset.addEventListener("click",function(){
+    var hood=curCity==="sj"?curHood:null;
+    var label=curCity==="sj"&&hood?hoodLabel(hood):(CN[curCity]||curCity);
+    if(!confirm("Remove the custom background photo for "+label+" and go back to the default?"))return;
+    Storage.remove(customBgKey(curCity,hood));
+    if(hood==="downtown")Storage.remove(customBgKey(curCity));
+    setCityBg(curCity,hood);
+  });
+}
+
+/* Neighborhood ("mini city") row - only San Jose has real hood data so
+   far, so the row simply renders empty (and collapses via CSS) for
+   every other city. Mirrors baypinnedmap1's cityRow->hoodRow pattern:
+   switching hoods swaps the whole board view the same way switching
+   cities does. */
+function renderHoodRow(){
+  var row=document.getElementById("hoodRow");
+  if(!row)return;
+  row.innerHTML="";
+  if(curCity!=="sj")return;
+  HOODS_SJ.forEach(function(h){
+    var b=document.createElement("button");
+    b.className="hoodbtn"+(h.id===curHood?" on":"");
+    b.dataset.hoodId=h.id;
+    b.textContent=h.l;
+    b.onclick=function(){goToHood(h.id);};
+    row.appendChild(b);
+  });
+  syncStickyOffsets();
+}
+
+function goToHood(hoodId){
+  curHood=hoodId;
+  document.querySelectorAll(".hoodbtn").forEach(function(b){b.classList.toggle("on",b.dataset.hoodId===hoodId);});
+  document.getElementById("citylbl").textContent=(CN.sj||"San Jose, CA")+(hoodId!=="downtown"?" · "+hoodLabel(hoodId):"");
+  setCityBg(curCity,curHood);
+  renderBoards();
+  renderToday();
 }
 
 function setCity(v){
+  curCity=v;
+  curHood=v==="sj"?"downtown":null;
   document.getElementById("citylbl").textContent=CN[v]||v;
-  setCityBg(v);
+  setBrand(v);
+  renderHoodRow();
+  setCityBg(v,curHood);
   var bv=document.getElementById("bView");
   if(v!=="sj"){
     bv.innerHTML="<div class='soon'>"+(CN[v]||v)+"<p>Events coming soon. Be the first to post a flyer!</p></div>";
@@ -191,12 +323,16 @@ function setCity(v){
     document.getElementById("tdwrap").style.display="block";
     renderBoards();
   }
+  renderToday();
 }
 
 function renderToday(){
   var tc=document.getElementById("tdCrds"),wc=document.getElementById("wkCrds");
-  var td=evts.filter(function(e){return isToday(e)&&!e.exp;});
-  var wk=evts.filter(function(e){return isWeek(e);});
+  if(!tc||!wc)return;
+  var hood=curCity==="sj"?curHood:null;
+  var pool=hood?evts.filter(function(e){return(e.hood||"downtown")===hood;}):evts;
+  var td=pool.filter(function(e){return isToday(e)&&!e.exp;});
+  var wk=pool.filter(function(e){return isWeek(e);});
   var none="<div style='color:rgba(218,184,112,.35);padding:16px;font-size:13px;'>Nothing confirmed yet</div>";
   tc.innerHTML=none;wc.innerHTML=none;
   if(td.length){tc.innerHTML="";td.forEach(function(ev){tc.appendChild(mkTCard(ev));});}
@@ -222,11 +358,52 @@ function mkTCard(ev){
 function renderBoards(){
   var bv=document.getElementById("bView");
   bv.innerHTML="";
+  var hood=curCity==="sj"?curHood:null;
+  /* Every neighborhood except downtown starts with zero seed flyers -
+     show all category boards there (not just venue/shop/bars) so
+     residents have somewhere to post the first one instead of hitting
+     what looks like a dead end. */
+  var alwaysShow=hood&&hood!=="downtown";
   ORD.forEach(function(cat){
-    var items=evts.filter(function(e){return e.cat===cat;});
-    if(!items.length&&cat!=="venue"&&cat!=="shop"&&cat!=="bars")return;
+    var items=evts.filter(function(e){return e.cat===cat&&(!hood||(e.hood||"downtown")===hood);});
+    if(!items.length&&!alwaysShow&&cat!=="venue"&&cat!=="shop"&&cat!=="bars"&&cat!=="parks")return;
     bv.appendChild(mkBoard(cat,items));
   });
+  setupCatScrollSpy();
+}
+
+/* Keeps the sticky category bar in sync with whichever board is in view,
+   so it doubles as a "you are here" guide instead of just a set of jump
+   links - lights up the matching pill as the visitor scrolls up or down
+   past a board's frame. Re-run after every renderBoards() since the
+   .bsec sections it observes are rebuilt from scratch each time. */
+var catObserver=null;
+function setupCatScrollSpy(){
+  if(catObserver){catObserver.disconnect();catObserver=null;}
+  var catBtns={};
+  document.querySelectorAll(".cnav .cc[data-cat]").forEach(function(b){catBtns[b.dataset.cat]=b;});
+  var sections=document.querySelectorAll(".bsec");
+  Object.keys(catBtns).forEach(function(k){catBtns[k].classList.remove("on");});
+  if(!sections.length||!("IntersectionObserver" in window))return;
+  var cnav=document.querySelector(".cnav");
+  var stickyH=(cnav?cnav.getBoundingClientRect().bottom:100)+10;
+  catObserver=new IntersectionObserver(function(entries){
+    entries.forEach(function(entry){
+      if(!entry.isIntersecting)return;
+      var cat=entry.target.id.replace("board-","");
+      Object.keys(catBtns).forEach(function(k){catBtns[k].classList.toggle("on",k===cat);});
+    });
+  },{rootMargin:"-"+Math.round(stickyH)+"px 0px -70% 0px",threshold:0});
+  sections.forEach(function(s){catObserver.observe(s);});
+}
+
+function setupBackToTop(){
+  var btn=document.getElementById("toTopBtn");
+  if(!btn)return;
+  window.addEventListener("scroll",function(){
+    btn.classList.toggle("show",window.scrollY>420);
+  },{passive:true});
+  btn.addEventListener("click",function(){window.scrollTo({top:0,behavior:"smooth"});});
 }
 
 function mkBoard(cat,items){
@@ -329,8 +506,8 @@ function openDetail(id){
   var xb=document.createElement("button");xb.className="xbtn";xb.textContent="X";
   xb.onclick=cls;dp.appendChild(xb);
 
-  var vhBtn=document.createElement("button");vhBtn.className="xbtnL";vhBtn.id="vhToggle";
-  vhBtn.innerHTML="&#128722;";vhBtn.title="Vendor Hub";
+  var vhBtn=document.createElement("button");vhBtn.className="vhbtn";vhBtn.id="vhToggle";
+  vhBtn.innerHTML="&#128722; Vendor Hub";vhBtn.title="View Vendor Hub";
   vhBtn.onclick=function(e){e.stopPropagation();toggleVendorView();};
   dp.appendChild(vhBtn);
 
@@ -414,7 +591,7 @@ function buildVendorHub(ev){
         badge.textContent=(v.boost&&v.boost.active)?vBoostLabel(v.boost.tier):"Featured";
         row.appendChild(badge);
       }
-      row.addEventListener("click",(function(vid){return function(){openVendorDetail(vid);};})(v.id));
+      row.addEventListener("click",(function(vid,eid){return function(){openVendorDetail(vid,eid);};})(v.id,ev.id));
       list.appendChild(row);
     });
   }else{
@@ -462,17 +639,28 @@ function buildVendorHub(ev){
   return vhub;
 }
 
+/* "Flips" the flyer between its event-info face and its Vendor Hub face -
+   a quick pinch (scaleX toward 0, swap content, scale back out) rather
+   than a true 3D rotate, so it works with whatever height either face's
+   content needs instead of requiring a fixed-height flip container. */
 function toggleVendorView(){
   var info=document.getElementById("infoView"),vhub=document.getElementById("vhubView"),btn=document.getElementById("vhToggle");
-  if(!info||!vhub||!btn)return;
-  var showingHub=vhub.style.display!=="none";
-  if(showingHub){
-    vhub.style.display="none";info.style.display="block";
-    btn.innerHTML="&#128722;";btn.title="Vendor Hub";
-  }else{
-    info.style.display="none";vhub.style.display="block";
-    btn.innerHTML="&#8505;";btn.title="Event Info";
-  }
+  var dp=document.getElementById("detPanel");
+  if(!info||!vhub||!btn||!dp)return;
+  dp.classList.add("flip-out");
+  setTimeout(function(){
+    var showingHub=vhub.style.display!=="none";
+    if(showingHub){
+      vhub.style.display="none";info.style.display="block";
+      btn.innerHTML="&#128722; Vendor Hub";btn.title="View Vendor Hub";
+      btn.classList.remove("back");
+    }else{
+      info.style.display="none";vhub.style.display="block";
+      btn.innerHTML="&#8617; Back to Flyer";btn.title="Back to Event Flyer";
+      btn.classList.add("back");
+    }
+    dp.classList.remove("flip-out");
+  },170);
 }
 
 function vFilter(btn){
@@ -516,6 +704,8 @@ function editEv(id){
     sv("ft2",(ev.tags||[]).join(", "));sv("fen",ev.ed);
     document.getElementById("fcat").value=ev.cat;
     document.getElementById("fdate").value=ev.d||"";
+    var hoodEl=document.getElementById("fhood");
+    if(hoodEl)hoodEl.value=ev.hood||"downtown";
   },60);
 }
 
@@ -543,7 +733,12 @@ function subSug(lid){
 function openForm(defCat){
   var fp=document.getElementById("frmPanel");
   var opts=Object.entries(C).map(function(e){return "<option value='"+e[0]+"'>"+e[1].l+"</option>";}).join("");
-  fp.innerHTML="<div class='fi'><h2>Post a Flyer</h2><label>Title *</label><input id='ft' type='text' placeholder='e.g. Japantown Night Market'><label>Category</label><select id='fcat'>"+opts+"</select><label>Short label shown on flyer</label><input id='fl' type='text' placeholder='e.g. Weekly Market'><label>When</label><input id='fw' type='text' placeholder='e.g. Saturdays 10am-2pm'><label>Date or recurrence</label><select id='fdate'><option value=''>None</option><option value='today'>Today</option><option value='daily'>Every Day</option><option value='mon'>Mondays</option><option value='tue'>Tuesdays</option><option value='wed'>Wednesdays</option><option value='thu'>Thursdays</option><option value='fri'>Fridays</option><option value='sat'>Saturdays</option><option value='sun'>Sundays</option><option value='monthly'>First Friday Monthly</option></select><label>Address *</label><input id='fa' type='text' placeholder='e.g. 87 N San Pedro St San Jose CA'><label>Phone</label><input id='fph' type='text' placeholder='(408) 555-0100'><label>Website</label><input id='fws' type='text' placeholder='https://'><label>Description</label><textarea id='fd' placeholder='Tell people what this is...'></textarea><label>Tags (comma separated)</label><input id='ft2' type='text' placeholder='Free Family Outdoor'><label>End date (auto-expires)</label><input id='fen' type='date'><label>Photo (optional)</label><input id='fp2' type='file' accept='image/*'><div class='facts'><button class='bcan' id='frmCan'>Cancel</button><button class='bsub' id='frmSub'>Pin It Up</button></div></div>";
+  var hoodField="";
+  if(curCity==="sj"){
+    var hoodOpts=HOODS_SJ.map(function(h){return "<option value='"+h.id+"'"+(h.id===curHood?" selected":"")+">"+h.l+"</option>";}).join("");
+    hoodField="<label>Neighborhood</label><select id='fhood'>"+hoodOpts+"</select>";
+  }
+  fp.innerHTML="<div class='fi'><h2>Post a Flyer</h2><label>Title *</label><input id='ft' type='text' placeholder='e.g. Japantown Night Market'><label>Category</label><select id='fcat'>"+opts+"</select>"+hoodField+"<label>Short label shown on flyer</label><input id='fl' type='text' placeholder='e.g. Weekly Market'><label>When</label><input id='fw' type='text' placeholder='e.g. Saturdays 10am-2pm'><label>Date or recurrence</label><select id='fdate'><option value=''>None</option><option value='today'>Today</option><option value='daily'>Every Day</option><option value='mon'>Mondays</option><option value='tue'>Tuesdays</option><option value='wed'>Wednesdays</option><option value='thu'>Thursdays</option><option value='fri'>Fridays</option><option value='sat'>Saturdays</option><option value='sun'>Sundays</option><option value='monthly'>First Friday Monthly</option></select><label>Address *</label><input id='fa' type='text' placeholder='e.g. 87 N San Pedro St San Jose CA'><label>Phone</label><input id='fph' type='text' placeholder='(408) 555-0100'><label>Website</label><input id='fws' type='text' placeholder='https://'><label>Description</label><textarea id='fd' placeholder='Tell people what this is...'></textarea><label>Tags (comma separated)</label><input id='ft2' type='text' placeholder='Free Family Outdoor'><label>End date (auto-expires)</label><input id='fen' type='date'><label>Photo (optional)</label><input id='fp2' type='file' accept='image/*'><div class='facts'><button class='bcan' id='frmCan'>Cancel</button><button class='bsub' id='frmSub'>Pin It Up</button></div></div>";
   if(defCat)document.getElementById("fcat").value=defCat;
   document.getElementById("frmCan").onclick=cls;
   document.getElementById("frmSub").onclick=subForm;
@@ -556,7 +751,8 @@ function subForm(){
   if(!t||!a){alert("Please add a title and address.");return;}
   var cat=document.getElementById("fcat").value;
   var eid=document.getElementById("frmPanel").dataset.eid;
-  var ev={id:eid||"u"+Date.now(),cat:cat,
+  var hoodEl=document.getElementById("fhood");
+  var ev={id:eid||"u"+Date.now(),cat:cat,hood:hoodEl?hoodEl.value:"",
     lbl:document.getElementById("fl").value.trim()||(C[cat]?C[cat].l:cat),
     t:t,w:document.getElementById("fw").value.trim()||"See details",
     d:document.getElementById("fdate").value||"",a:a,
@@ -574,7 +770,7 @@ function subForm(){
     expire();save();cls();renderBoards();renderToday();renderPins();
   }
   var pf=document.getElementById("fp2").files[0];
-  if(pf){var rd=new FileReader();rd.onload=function(e){ev.photo=e.target.result;done();};rd.readAsDataURL(pf);}
+  if(pf){resizeImageFile(pf,1100,0.82,function(dataUrl){ev.photo=dataUrl;done();});}
   else done();
 }
 
