@@ -49,7 +49,7 @@ function vBoostLabel(tier) {
 /* Vendor profile detail — reuses the same .dpanel/.dhero/.dbody/.igrid
    markup the event detail modal already uses, so it looks consistent
    without needing its own CSS. */
-function openVendorDetail(id) {
+function openVendorDetail(id, fromEventId) {
   var v = vendors.find(function (x) { return x.id === id; }); if (!v) return;
   var cat = C[v.cat] || { l: v.cat, i: "&#128204;", c: "#666" };
   var mu = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(v.address || v.name);
@@ -58,6 +58,16 @@ function openVendorDetail(id) {
 
   var xb = document.createElement("button"); xb.className = "xbtn"; xb.textContent = "X";
   xb.onclick = cls; dp.appendChild(xb);
+
+  /* Only vendors opened from inside an event's Vendor Hub list carry a
+     fromEventId - map-pin/search-opened vendors have nowhere to "go
+     back" to, so they keep just the X close button. */
+  if (fromEventId) {
+    var backBtn = document.createElement("button"); backBtn.className = "vhbtn back";
+    backBtn.innerHTML = "&#8592; Back to Vendor Hub"; backBtn.title = "Back to Vendor Hub";
+    backBtn.onclick = function (e) { e.stopPropagation(); backToVendorHub(fromEventId); };
+    dp.appendChild(backBtn);
+  }
 
   var hero = document.createElement("div"); hero.className = "dhero" + (v.cover ? " hp" : "");
   if (v.cover) { hero.style.backgroundImage = "url(" + v.cover + ")"; hero.style.backgroundSize = "cover"; hero.style.backgroundPosition = "center"; }
@@ -150,6 +160,22 @@ function shareVendor(id) {
 function showVendorOnMap(id) {
   showMap();
   hVendorPin(id);
+}
+
+/* Returns from a vendor's own detail page to the event flyer it was
+   opened from, landing back on that event's Vendor Hub face (not the
+   event-info face) so it feels like a "back" step rather than starting
+   over from the flyer's front. */
+function backToVendorHub(eventId) {
+  openDetail(eventId);
+  setTimeout(function () {
+    var info = document.getElementById("infoView"), vhub = document.getElementById("vhubView"), btn = document.getElementById("vhToggle");
+    if (info && vhub && btn) {
+      info.style.display = "none"; vhub.style.display = "block";
+      btn.innerHTML = "&#8617; Back to Flyer"; btn.title = "Back to Event Flyer";
+      btn.classList.add("back");
+    }
+  }, 30);
 }
 
 /* ── MAP PINS (square markers, distinct from the round event pins) ── */

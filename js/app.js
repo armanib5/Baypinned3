@@ -4,12 +4,20 @@ var C={
   bars:{l:"Bars & Restaurants",i:"&#127864;",c:"#6b1e3c"},
   artwalk:{l:"Art Walk",i:"&#127912;",c:"#2c5f8a"},
   cityart:{l:"City Art",i:"&#127917;",c:"#6a4e7a"},
+  parks:{l:"Parks",i:"&#127795;",c:"#5a8c3a"},
   venue:{l:"Theaters",i:"&#127963;",c:"#7a5230"},
   holiday:{l:"Holiday",i:"&#9917;",c:"#8B0000"},
   shop:{l:"Shops",i:"&#128717;",c:"#c0392b"}
 };
-var ORD=["market","foodhall","bars","artwalk","cityart","venue","holiday","shop"];
+var ORD=["market","foodhall","bars","artwalk","cityart","parks","venue","holiday","shop"];
 var CN={sj:"San Jose, CA",sc:"Santa Clara, CA",sv:"Sunnyvale, CA",mv:"Mountain View, CA",camp:"Campbell, CA"};
+var CITY_ABBR={sj:"SJ",sc:"SC",sv:"SV",mv:"MV",camp:"Camp"};
+function setBrand(v){
+  var name="BayPinned "+(CITY_ABBR[v]||v.toUpperCase());
+  var el=document.getElementById("brandName");
+  if(el)el.textContent=name;
+  document.title=name;
+}
 /* San Jose's mini-city neighborhoods - same list/order/ids as the
    HOODS array in baypinnedmap1/data/places.js, so a flyer's hood tag
    lines up with that map's pins once the two sites combine. Events
@@ -124,6 +132,7 @@ document.getElementById("postBtn2").onclick=function(){openForm("");};
 
 function init(){
   load();
+  setBrand(curCity);
   renderHoodRow();
   renderToday();
   renderBoards();
@@ -303,6 +312,7 @@ function setCity(v){
   curCity=v;
   curHood=v==="sj"?"downtown":null;
   document.getElementById("citylbl").textContent=CN[v]||v;
+  setBrand(v);
   renderHoodRow();
   setCityBg(v,curHood);
   var bv=document.getElementById("bView");
@@ -356,7 +366,7 @@ function renderBoards(){
   var alwaysShow=hood&&hood!=="downtown";
   ORD.forEach(function(cat){
     var items=evts.filter(function(e){return e.cat===cat&&(!hood||(e.hood||"downtown")===hood);});
-    if(!items.length&&!alwaysShow&&cat!=="venue"&&cat!=="shop"&&cat!=="bars")return;
+    if(!items.length&&!alwaysShow&&cat!=="venue"&&cat!=="shop"&&cat!=="bars"&&cat!=="parks")return;
     bv.appendChild(mkBoard(cat,items));
   });
   setupCatScrollSpy();
@@ -496,8 +506,8 @@ function openDetail(id){
   var xb=document.createElement("button");xb.className="xbtn";xb.textContent="X";
   xb.onclick=cls;dp.appendChild(xb);
 
-  var vhBtn=document.createElement("button");vhBtn.className="xbtnL";vhBtn.id="vhToggle";
-  vhBtn.innerHTML="&#128722;";vhBtn.title="Vendor Hub";
+  var vhBtn=document.createElement("button");vhBtn.className="vhbtn";vhBtn.id="vhToggle";
+  vhBtn.innerHTML="&#128722; Vendor Hub";vhBtn.title="View Vendor Hub";
   vhBtn.onclick=function(e){e.stopPropagation();toggleVendorView();};
   dp.appendChild(vhBtn);
 
@@ -581,7 +591,7 @@ function buildVendorHub(ev){
         badge.textContent=(v.boost&&v.boost.active)?vBoostLabel(v.boost.tier):"Featured";
         row.appendChild(badge);
       }
-      row.addEventListener("click",(function(vid){return function(){openVendorDetail(vid);};})(v.id));
+      row.addEventListener("click",(function(vid,eid){return function(){openVendorDetail(vid,eid);};})(v.id,ev.id));
       list.appendChild(row);
     });
   }else{
@@ -629,17 +639,28 @@ function buildVendorHub(ev){
   return vhub;
 }
 
+/* "Flips" the flyer between its event-info face and its Vendor Hub face -
+   a quick pinch (scaleX toward 0, swap content, scale back out) rather
+   than a true 3D rotate, so it works with whatever height either face's
+   content needs instead of requiring a fixed-height flip container. */
 function toggleVendorView(){
   var info=document.getElementById("infoView"),vhub=document.getElementById("vhubView"),btn=document.getElementById("vhToggle");
-  if(!info||!vhub||!btn)return;
-  var showingHub=vhub.style.display!=="none";
-  if(showingHub){
-    vhub.style.display="none";info.style.display="block";
-    btn.innerHTML="&#128722;";btn.title="Vendor Hub";
-  }else{
-    info.style.display="none";vhub.style.display="block";
-    btn.innerHTML="&#8505;";btn.title="Event Info";
-  }
+  var dp=document.getElementById("detPanel");
+  if(!info||!vhub||!btn||!dp)return;
+  dp.classList.add("flip-out");
+  setTimeout(function(){
+    var showingHub=vhub.style.display!=="none";
+    if(showingHub){
+      vhub.style.display="none";info.style.display="block";
+      btn.innerHTML="&#128722; Vendor Hub";btn.title="View Vendor Hub";
+      btn.classList.remove("back");
+    }else{
+      info.style.display="none";vhub.style.display="block";
+      btn.innerHTML="&#8617; Back to Flyer";btn.title="Back to Event Flyer";
+      btn.classList.add("back");
+    }
+    dp.classList.remove("flip-out");
+  },170);
 }
 
 function vFilter(btn){
