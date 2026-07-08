@@ -18,7 +18,20 @@ body{font-family:'Libre Franklin',sans-serif;color:var(--ink);background:#1a0800
 .bgbtn:hover{background:rgba(218,184,112,.25);}
 .bgbtn.custom{border-color:var(--go);box-shadow:0 0 0 1px var(--go);}
 .bgxbtn{position:absolute;top:-5px;right:-5px;width:16px;height:16px;border-radius:50%;background:var(--cr8);color:#fff;border:2px solid #1a0e00;font-size:8px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}
-.cnav{position:sticky;top:var(--nav-h,52px);z-index:899;background:rgba(8,4,0,.95);border-bottom:1px solid rgba(218,184,112,.12);display:flex;gap:6px;padding:8px 14px;overflow-x:auto;scrollbar-width:none;}
+/* Mini-city (neighborhood) row - same pill pattern/interaction as
+   baypinnedmap1's .hoodrow, sitting between the main nav and the category
+   bar so the two sticky rows stack the same way the map's city/hood rows
+   do. Empty (no children) and collapses to 0 height on cities that don't
+   have neighborhoods wired up yet. */
+.hoodrow{position:sticky;top:var(--nav-h,52px);z-index:899;background:rgba(10,5,0,.96);border-bottom:1px solid rgba(218,184,112,.12);display:flex;gap:8px;padding:0 14px;overflow-x:auto;scrollbar-width:none;transition:padding .15s;}
+.hoodrow:empty{padding:0;border-bottom:none;}
+.hoodrow::-webkit-scrollbar{display:none;}
+.hoodrow:not(:empty){padding:8px 14px;}
+.hoodbtn{flex-shrink:0;font-family:'Special Elite',monospace;font-size:11.5px;background:rgba(255,255,255,.05);color:rgba(218,184,112,.75);border:1px solid rgba(218,184,112,.22);padding:6px 14px;border-radius:15px;cursor:pointer;white-space:nowrap;transition:all .2s;}
+.hoodbtn:hover{border-color:rgba(218,184,112,.5);}
+.hoodbtn.on{background:var(--go);color:#fff;border-color:var(--go);}
+
+.cnav{position:sticky;top:calc(var(--nav-h,52px) + var(--hood-h,0px));z-index:898;background:rgba(8,4,0,.95);border-bottom:1px solid rgba(218,184,112,.12);display:flex;gap:6px;padding:8px 14px;overflow-x:auto;scrollbar-width:none;}
 .cnav::-webkit-scrollbar{display:none;}
 .cc{flex-shrink:0;padding:5px 13px;border-radius:13px;border:none;cursor:pointer;font-size:11px;font-weight:700;color:#fff;opacity:.82;white-space:nowrap;transition:transform .15s,opacity .15s;}
 .cc:hover{transform:scale(1.07);opacity:1;}

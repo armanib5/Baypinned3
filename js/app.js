@@ -10,6 +10,21 @@ var C={
 };
 var ORD=["market","foodhall","bars","artwalk","cityart","venue","holiday","shop"];
 var CN={sj:"San Jose, CA",sc:"Santa Clara, CA",sv:"Sunnyvale, CA",mv:"Mountain View, CA",camp:"Campbell, CA"};
+/* San Jose's mini-city neighborhoods - same list/order/ids as the
+   HOODS array in baypinnedmap1/data/places.js, so a flyer's hood tag
+   lines up with that map's pins once the two sites combine. Events
+   with no hood field are treated as "downtown" (all of today's seed
+   data is downtown San Jose). Only San Jose has this wired up for now;
+   other cities keep their existing single-board "coming soon" view. */
+var HOODS_SJ=[
+  {id:"downtown",l:"Downtown San Jose"},
+  {id:"japantown",l:"Japantown"},
+  {id:"santana",l:"Santana Row & Valley Fair"},
+  {id:"willow",l:"Willow Glen"},
+  {id:"alum",l:"Alum Rock"},
+  {id:"east",l:"East San Jose"}
+];
+var curHood="downtown";
 var DEF=[
 {id:"fm",cat:"market",lbl:"Weekly Market",exp:false,
  t:"Downtown SJ Farmers Market",w:"Wednesdays 9:00am - 1:30pm",d:"wed",
@@ -109,34 +124,37 @@ document.getElementById("postBtn2").onclick=function(){openForm("");};
 
 function init(){
   load();
+  renderHoodRow();
   renderToday();
   renderBoards();
   renderPins();
   setupPan();
   setupBgParallax();
   setupBackToTop();
-  setupNavOffset();
+  setupStickyOffsetWatcher();
   setupBgUpload();
-  setCityBg(curCity);
+  setCityBg(curCity,curHood);
 }
 
 /* The top nav wraps to 2-3 rows on narrow screens (logo/buttons/city
-   picker/post button don't all fit on one line), so its real height isn't
-   the fixed 52px the sticky category bar below it assumed - that caused
-   the category bar to sit on top of the wrapped nav instead of under it
-   on mobile. Measuring the actual rendered height keeps them stacked
-   correctly at any width or font-load state. */
-function setupNavOffset(){
-  var nav=document.querySelector(".nav");
-  if(!nav)return;
+   picker/post button don't all fit on one line), and the neighborhood
+   row only exists at all for San Jose - so neither the sticky hood row
+   nor the sticky category bar below it can assume a fixed pixel offset.
+   Measuring the actual rendered heights keeps the nav -> hoodrow -> cnav
+   stack aligned at any width, hood count, or font-load state. */
+function syncStickyOffsets(){
+  var nav=document.querySelector(".nav"),hood=document.getElementById("hoodRow");
+  if(nav)document.documentElement.style.setProperty("--nav-h",nav.offsetHeight+"px");
+  if(hood)document.documentElement.style.setProperty("--hood-h",hood.offsetHeight+"px");
+}
+function setupStickyOffsetWatcher(){
   var raf=null;
-  function sync(){document.documentElement.style.setProperty("--nav-h",nav.offsetHeight+"px");}
-  sync();
+  syncStickyOffsets();
   window.addEventListener("resize",function(){
     if(raf)cancelAnimationFrame(raf);
-    raf=requestAnimationFrame(sync);
+    raf=requestAnimationFrame(syncStickyOffsets);
   });
-  if(document.fonts&&document.fonts.ready)document.fonts.ready.then(sync);
+  if(document.fonts&&document.fonts.ready)document.fonts.ready.then(syncStickyOffsets);
 }
 
 /* Background photo drifts and zooms slightly in the direction of whatever
@@ -205,15 +223,24 @@ function isWeek(ev){return!isToday(ev)&&!ev.exp&&["daily","wed","thu","fri","sat
    needs a code change. */
 var CITY_BG={sj:"img/background.jpg",sc:"img/bg-sc.jpg",sv:"img/bg-sv.jpg",mv:"img/bg-mv.jpg",camp:"img/bg-camp.jpg"};
 var curCity="sj";
-function customBgKey(v){return "citybg-"+v;}
-function setCityBg(v){
+function customBgKey(city,hood){return hood?("citybg-"+city+"-"+hood):("citybg-"+city);}
+function hoodLabel(id){var h=HOODS_SJ.find(function(x){return x.id===id;});return h?h.l:id;}
+function setCityBg(city,hood){
   var bg=document.querySelector(".bg");if(!bg)return;
-  var custom=Storage.get(customBgKey(v),null);
-  var file=custom||CITY_BG[v]||CITY_BG.sj;
+  var custom=Storage.get(customBgKey(city,hood),null);
+  /* Downtown SJ's custom photo used to live under the plain "citybg-sj"
+     key before neighborhoods existed - fall back to it so an
+     already-uploaded photo doesn't quietly vanish now that downtown is
+     also a hood. */
+  if(!custom&&hood==="downtown")custom=Storage.get(customBgKey(city),null);
+  var file=custom||CITY_BG[city]||CITY_BG.sj;
   bg.style.backgroundImage="linear-gradient(180deg,rgba(15,8,0,.5),rgba(20,10,0,.28) 50%,rgba(12,6,0,.52)),url('"+file+"')";
   var bgBtn=document.getElementById("bgBtn"),bgReset=document.getElementById("bgResetBtn");
   if(bgBtn)bgBtn.classList.toggle("custom",!!custom);
   if(bgReset)bgReset.classList.toggle("hidden",!custom);
+  var label=city==="sj"&&hood?hoodLabel(hood):(CN[city]||city);
+  if(bgBtn){bgBtn.title="Change background photo for "+label;bgBtn.setAttribute("aria-label","Change background photo for "+label);}
+  if(bgReset){bgReset.title="Reset "+label+"'s background photo";bgReset.setAttribute("aria-label","Reset "+label+"'s background photo");}
 }
 
 function setupBgUpload(){
@@ -223,25 +250,61 @@ function setupBgUpload(){
   file.addEventListener("change",function(){
     var f=file.files[0];file.value="";
     if(!f)return;
+    var hood=curCity==="sj"?curHood:null;
     resizeImageFile(f,1600,0.85,function(dataUrl){
-      if(!Storage.set(customBgKey(curCity),dataUrl)){
+      if(!Storage.set(customBgKey(curCity,hood),dataUrl)){
         alert("This photo couldn't be saved - your browser's local storage is full. Try removing an old flyer or photo, then try again.");
         return;
       }
-      setCityBg(curCity);
+      setCityBg(curCity,hood);
     });
   });
   if(reset)reset.addEventListener("click",function(){
-    if(!confirm("Remove this city's custom background photo and go back to the default?"))return;
-    Storage.remove(customBgKey(curCity));
-    setCityBg(curCity);
+    var hood=curCity==="sj"?curHood:null;
+    var label=curCity==="sj"&&hood?hoodLabel(hood):(CN[curCity]||curCity);
+    if(!confirm("Remove the custom background photo for "+label+" and go back to the default?"))return;
+    Storage.remove(customBgKey(curCity,hood));
+    if(hood==="downtown")Storage.remove(customBgKey(curCity));
+    setCityBg(curCity,hood);
   });
+}
+
+/* Neighborhood ("mini city") row - only San Jose has real hood data so
+   far, so the row simply renders empty (and collapses via CSS) for
+   every other city. Mirrors baypinnedmap1's cityRow->hoodRow pattern:
+   switching hoods swaps the whole board view the same way switching
+   cities does. */
+function renderHoodRow(){
+  var row=document.getElementById("hoodRow");
+  if(!row)return;
+  row.innerHTML="";
+  if(curCity!=="sj")return;
+  HOODS_SJ.forEach(function(h){
+    var b=document.createElement("button");
+    b.className="hoodbtn"+(h.id===curHood?" on":"");
+    b.dataset.hoodId=h.id;
+    b.textContent=h.l;
+    b.onclick=function(){goToHood(h.id);};
+    row.appendChild(b);
+  });
+  syncStickyOffsets();
+}
+
+function goToHood(hoodId){
+  curHood=hoodId;
+  document.querySelectorAll(".hoodbtn").forEach(function(b){b.classList.toggle("on",b.dataset.hoodId===hoodId);});
+  document.getElementById("citylbl").textContent=(CN.sj||"San Jose, CA")+(hoodId!=="downtown"?" · "+hoodLabel(hoodId):"");
+  setCityBg(curCity,curHood);
+  renderBoards();
+  renderToday();
 }
 
 function setCity(v){
   curCity=v;
+  curHood=v==="sj"?"downtown":null;
   document.getElementById("citylbl").textContent=CN[v]||v;
-  setCityBg(v);
+  renderHoodRow();
+  setCityBg(v,curHood);
   var bv=document.getElementById("bView");
   if(v!=="sj"){
     bv.innerHTML="<div class='soon'>"+(CN[v]||v)+"<p>Events coming soon. Be the first to post a flyer!</p></div>";
@@ -250,12 +313,16 @@ function setCity(v){
     document.getElementById("tdwrap").style.display="block";
     renderBoards();
   }
+  renderToday();
 }
 
 function renderToday(){
   var tc=document.getElementById("tdCrds"),wc=document.getElementById("wkCrds");
-  var td=evts.filter(function(e){return isToday(e)&&!e.exp;});
-  var wk=evts.filter(function(e){return isWeek(e);});
+  if(!tc||!wc)return;
+  var hood=curCity==="sj"?curHood:null;
+  var pool=hood?evts.filter(function(e){return(e.hood||"downtown")===hood;}):evts;
+  var td=pool.filter(function(e){return isToday(e)&&!e.exp;});
+  var wk=pool.filter(function(e){return isWeek(e);});
   var none="<div style='color:rgba(218,184,112,.35);padding:16px;font-size:13px;'>Nothing confirmed yet</div>";
   tc.innerHTML=none;wc.innerHTML=none;
   if(td.length){tc.innerHTML="";td.forEach(function(ev){tc.appendChild(mkTCard(ev));});}
@@ -281,9 +348,15 @@ function mkTCard(ev){
 function renderBoards(){
   var bv=document.getElementById("bView");
   bv.innerHTML="";
+  var hood=curCity==="sj"?curHood:null;
+  /* Every neighborhood except downtown starts with zero seed flyers -
+     show all category boards there (not just venue/shop/bars) so
+     residents have somewhere to post the first one instead of hitting
+     what looks like a dead end. */
+  var alwaysShow=hood&&hood!=="downtown";
   ORD.forEach(function(cat){
-    var items=evts.filter(function(e){return e.cat===cat;});
-    if(!items.length&&cat!=="venue"&&cat!=="shop"&&cat!=="bars")return;
+    var items=evts.filter(function(e){return e.cat===cat&&(!hood||(e.hood||"downtown")===hood);});
+    if(!items.length&&!alwaysShow&&cat!=="venue"&&cat!=="shop"&&cat!=="bars")return;
     bv.appendChild(mkBoard(cat,items));
   });
   setupCatScrollSpy();
@@ -302,13 +375,15 @@ function setupCatScrollSpy(){
   var sections=document.querySelectorAll(".bsec");
   Object.keys(catBtns).forEach(function(k){catBtns[k].classList.remove("on");});
   if(!sections.length||!("IntersectionObserver" in window))return;
+  var cnav=document.querySelector(".cnav");
+  var stickyH=(cnav?cnav.getBoundingClientRect().bottom:100)+10;
   catObserver=new IntersectionObserver(function(entries){
     entries.forEach(function(entry){
       if(!entry.isIntersecting)return;
       var cat=entry.target.id.replace("board-","");
       Object.keys(catBtns).forEach(function(k){catBtns[k].classList.toggle("on",k===cat);});
     });
-  },{rootMargin:"-100px 0px -70% 0px",threshold:0});
+  },{rootMargin:"-"+Math.round(stickyH)+"px 0px -70% 0px",threshold:0});
   sections.forEach(function(s){catObserver.observe(s);});
 }
 
@@ -608,6 +683,8 @@ function editEv(id){
     sv("ft2",(ev.tags||[]).join(", "));sv("fen",ev.ed);
     document.getElementById("fcat").value=ev.cat;
     document.getElementById("fdate").value=ev.d||"";
+    var hoodEl=document.getElementById("fhood");
+    if(hoodEl)hoodEl.value=ev.hood||"downtown";
   },60);
 }
 
@@ -635,7 +712,12 @@ function subSug(lid){
 function openForm(defCat){
   var fp=document.getElementById("frmPanel");
   var opts=Object.entries(C).map(function(e){return "<option value='"+e[0]+"'>"+e[1].l+"</option>";}).join("");
-  fp.innerHTML="<div class='fi'><h2>Post a Flyer</h2><label>Title *</label><input id='ft' type='text' placeholder='e.g. Japantown Night Market'><label>Category</label><select id='fcat'>"+opts+"</select><label>Short label shown on flyer</label><input id='fl' type='text' placeholder='e.g. Weekly Market'><label>When</label><input id='fw' type='text' placeholder='e.g. Saturdays 10am-2pm'><label>Date or recurrence</label><select id='fdate'><option value=''>None</option><option value='today'>Today</option><option value='daily'>Every Day</option><option value='mon'>Mondays</option><option value='tue'>Tuesdays</option><option value='wed'>Wednesdays</option><option value='thu'>Thursdays</option><option value='fri'>Fridays</option><option value='sat'>Saturdays</option><option value='sun'>Sundays</option><option value='monthly'>First Friday Monthly</option></select><label>Address *</label><input id='fa' type='text' placeholder='e.g. 87 N San Pedro St San Jose CA'><label>Phone</label><input id='fph' type='text' placeholder='(408) 555-0100'><label>Website</label><input id='fws' type='text' placeholder='https://'><label>Description</label><textarea id='fd' placeholder='Tell people what this is...'></textarea><label>Tags (comma separated)</label><input id='ft2' type='text' placeholder='Free Family Outdoor'><label>End date (auto-expires)</label><input id='fen' type='date'><label>Photo (optional)</label><input id='fp2' type='file' accept='image/*'><div class='facts'><button class='bcan' id='frmCan'>Cancel</button><button class='bsub' id='frmSub'>Pin It Up</button></div></div>";
+  var hoodField="";
+  if(curCity==="sj"){
+    var hoodOpts=HOODS_SJ.map(function(h){return "<option value='"+h.id+"'"+(h.id===curHood?" selected":"")+">"+h.l+"</option>";}).join("");
+    hoodField="<label>Neighborhood</label><select id='fhood'>"+hoodOpts+"</select>";
+  }
+  fp.innerHTML="<div class='fi'><h2>Post a Flyer</h2><label>Title *</label><input id='ft' type='text' placeholder='e.g. Japantown Night Market'><label>Category</label><select id='fcat'>"+opts+"</select>"+hoodField+"<label>Short label shown on flyer</label><input id='fl' type='text' placeholder='e.g. Weekly Market'><label>When</label><input id='fw' type='text' placeholder='e.g. Saturdays 10am-2pm'><label>Date or recurrence</label><select id='fdate'><option value=''>None</option><option value='today'>Today</option><option value='daily'>Every Day</option><option value='mon'>Mondays</option><option value='tue'>Tuesdays</option><option value='wed'>Wednesdays</option><option value='thu'>Thursdays</option><option value='fri'>Fridays</option><option value='sat'>Saturdays</option><option value='sun'>Sundays</option><option value='monthly'>First Friday Monthly</option></select><label>Address *</label><input id='fa' type='text' placeholder='e.g. 87 N San Pedro St San Jose CA'><label>Phone</label><input id='fph' type='text' placeholder='(408) 555-0100'><label>Website</label><input id='fws' type='text' placeholder='https://'><label>Description</label><textarea id='fd' placeholder='Tell people what this is...'></textarea><label>Tags (comma separated)</label><input id='ft2' type='text' placeholder='Free Family Outdoor'><label>End date (auto-expires)</label><input id='fen' type='date'><label>Photo (optional)</label><input id='fp2' type='file' accept='image/*'><div class='facts'><button class='bcan' id='frmCan'>Cancel</button><button class='bsub' id='frmSub'>Pin It Up</button></div></div>";
   if(defCat)document.getElementById("fcat").value=defCat;
   document.getElementById("frmCan").onclick=cls;
   document.getElementById("frmSub").onclick=subForm;
@@ -648,7 +730,8 @@ function subForm(){
   if(!t||!a){alert("Please add a title and address.");return;}
   var cat=document.getElementById("fcat").value;
   var eid=document.getElementById("frmPanel").dataset.eid;
-  var ev={id:eid||"u"+Date.now(),cat:cat,
+  var hoodEl=document.getElementById("fhood");
+  var ev={id:eid||"u"+Date.now(),cat:cat,hood:hoodEl?hoodEl.value:"",
     lbl:document.getElementById("fl").value.trim()||(C[cat]?C[cat].l:cat),
     t:t,w:document.getElementById("fw").value.trim()||"See details",
     d:document.getElementById("fdate").value||"",a:a,
