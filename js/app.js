@@ -577,43 +577,74 @@ function buildVendorHub(ev){
   var vsub=document.createElement("div");vsub.className="dw";vsub.textContent=ev.t;
   vhub.appendChild(vh2);vhub.appendChild(vsub);
 
-  /* Sort/badge purely from real purchased promotions (js/promo.js),
-     scoped to this specific event - a vendor with no active/upcoming
-     promotion here shows no badge at all (no "Free Vendor" label). */
-  var linked=(typeof eventVendors==="function"?eventVendors(ev):[]).slice().sort(function(a,b){
-    var av=vendorPromoBadges(a.id,ev.id),bv=vendorPromoBadges(b.id,ev.id);
-    var ascore=(av.featured?2:0)+(av.boostActive?1:0);
-    var bscore=(bv.featured?2:0)+(bv.boostActive?1:0);
-    return bscore-ascore;
-  });
+  /* Badges/ranking come purely from real purchased promotions
+     (js/promo.js), scoped to this specific event - a vendor with no
+     active promotion shows no badge at all (no "Free Vendor" label).
+     Top 10 Spotlight: up to 5 currently-Featured vendors, then up to 5
+     currently-Boost-active vendors, pulled out of the regular list so
+     the promotion is visibly worth something. */
+  var allLinked=typeof eventVendors==="function"?eventVendors(ev):[];
+  var featuredNow=allLinked.filter(function(v){return vendorPromoBadges(v.id,ev.id).featured;}).slice(0,5);
+  var boostNow=allLinked.filter(function(v){return vendorPromoBadges(v.id,ev.id).boostActive;}).slice(0,5);
+  var spotlightIds=featuredNow.concat(boostNow).map(function(v){return v.id;});
+  var rest=allLinked.filter(function(v){return spotlightIds.indexOf(v.id)<0;});
+
+  function mkVendorRow(v,rankLabel){
+    var row=document.createElement("div");row.className="vhub-row";
+    if(rankLabel){var rk=document.createElement("span");rk.className="vhub-rank";rk.textContent=rankLabel;row.appendChild(rk);}
+    var nm=document.createElement("span");nm.className="vhub-name";nm.textContent=v.name;
+    row.appendChild(nm);
+    var pb=vendorPromoBadges(v.id,ev.id);
+    if(pb.featured||pb.boostActive){
+      var badge=document.createElement("span");badge.className="vhub-badge";
+      badge.textContent=pb.boostActive?"Boost Live":"Featured";
+      row.appendChild(badge);
+    }
+    row.addEventListener("click",(function(vid,eid){return function(){openVendorDetail(vid,eid);};})(v.id,ev.id));
+    return row;
+  }
+
+  if(spotlightIds.length){
+    var spotHead=document.createElement("h4");spotHead.className="vhub-spot-head";spotHead.innerHTML="&#127942; Top 10 Spotlight";
+    vhub.appendChild(spotHead);
+    var spotlight=document.createElement("div");spotlight.className="vhub-list spotlight";
+    featuredNow.forEach(function(v,i){spotlight.appendChild(mkVendorRow(v,"#"+(i+1)));});
+    boostNow.forEach(function(v,i){spotlight.appendChild(mkVendorRow(v,"#"+(featuredNow.length+i+1)));});
+    vhub.appendChild(spotlight);
+    var restHead=document.createElement("h4");restHead.className="vhub-spot-head";restHead.textContent="All Vendors";
+    vhub.appendChild(restHead);
+  }
   var list=document.createElement("div");list.className="vhub-list";
-  if(linked.length){
-    linked.forEach(function(v){
-      var row=document.createElement("div");row.className="vhub-row";
-      var nm=document.createElement("span");nm.className="vhub-name";nm.textContent=v.name;
-      row.appendChild(nm);
-      var pb=vendorPromoBadges(v.id,ev.id);
-      if(pb.featured||pb.boostActive){
-        var badge=document.createElement("span");badge.className="vhub-badge";
-        badge.textContent=pb.boostActive?"Boost Live":"Featured";
-        row.appendChild(badge);
-      }
-      row.addEventListener("click",(function(vid,eid){return function(){openVendorDetail(vid,eid);};})(v.id,ev.id));
-      list.appendChild(row);
-    });
-  }else{
+  if(rest.length){
+    rest.forEach(function(v){list.appendChild(mkVendorRow(v,null));});
+  }else if(!spotlightIds.length){
     var none=document.createElement("div");none.className="vhub-none";none.textContent="No vendors listed yet.";
     list.appendChild(none);
   }
   vhub.appendChild(list);
 
   var cta=document.createElement("div");cta.className="vhub-cta";
-  cta.textContent="Want your business seen here? Boost or feature your listing.";
+  cta.textContent="Want your business seen here? Boost or feature your listing to land in the Top 10 Spotlight above.";
   vhub.appendChild(cta);
 
   var addV=document.createElement("button");addV.className="sugbtn";addV.textContent="+ Add Your Business";
   addV.onclick=(function(cat,eid){return function(){openVendorForm(cat,"",eid);};})(ev.cat,ev.id);
   vhub.appendChild(addV);
+
+  /* Direct, easy-to-find entry point into checkout for anyone who
+     already has a listing here on this device - vendors were reporting
+     they couldn't find their way back to Boost/Feature checkout after
+     the initial post-creation prompt. */
+  var myLinked=allLinked.filter(function(v){return typeof isMyVendor==="function"&&isMyVendor(v.id);});
+  if(myLinked.length){
+    var promoQuick=document.createElement("button");promoQuick.className="sugbtn";promoQuick.style.cssText="background:#f0d890;border-color:var(--g);color:#2a1800;font-weight:700;";
+    promoQuick.innerHTML="&#128640; Boost or &#11088; Feature My Listing";
+    promoQuick.onclick=(function(vlist,eid){return function(){
+      if(vlist.length===1&&typeof openPromoPicker==="function")openPromoPicker(vlist[0].id,eid);
+      else if(typeof openVendorDashboard==="function"){cls();openVendorDashboard();}
+    };})(myLinked,ev.id);
+    vhub.appendChild(promoQuick);
+  }
 
   if(ev.vg&&ev.vg.length){
     var vsec=document.createElement("div");vsec.className="vsec";

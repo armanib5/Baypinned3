@@ -12,13 +12,15 @@ function escHtml(s) {
 /* ── Promotion picker (event -> type -> hour -> slots -> checkout) ── */
 var promoState = {};
 
-function openPromoPicker(vendorId) {
+function openPromoPicker(vendorId, preferredEventId) {
   var v = vendors.find(function (x) { return x.id === vendorId; });
   if (!v) return;
   promoState = { vendorId: vendorId };
   var myEvents = vendorEvents(v);
   document.getElementById("promoOv").classList.add("on");
-  if (!myEvents.length) renderPromoNoEvents(v);
+  if (preferredEventId && myEvents.some(function (e) { return e.id === preferredEventId; })) {
+    promoState.eventId = preferredEventId; renderPromoTypeStep();
+  } else if (!myEvents.length) renderPromoNoEvents(v);
   else if (myEvents.length === 1) { promoState.eventId = myEvents[0].id; renderPromoTypeStep(); }
   else renderPromoEventStep(myEvents);
 }
@@ -26,6 +28,7 @@ function promoCls() {
   document.getElementById("promoOv").classList.remove("on");
   document.getElementById("promoPanel").innerHTML = "";
   promoState = {};
+  if (promoSuccessTimer) { clearInterval(promoSuccessTimer); promoSuccessTimer = null; }
 }
 
 function renderPromoNoEvents(v) {
@@ -62,28 +65,29 @@ function renderPromoTypeStep() {
     "<p class='promo-sub'>For: " + escHtml(ev.t) + "</p>" +
     "<div class='promo-cards'>" +
     "<div class='promo-card' id='pcBoost'><h3>&#128640; Boost</h3><span class='pc-price'>$" + pricing.boost + "</span>" +
-    "<p>Two 10-minute promotion slots (20 minutes total) during an event hour you pick. Puts your listing forward while your slots run.</p></div>" +
+    "<p>Two 10-minute slots (20 minutes total) during an event hour you pick. Puts your listing in the Top 10 spotlight while your slots run.</p></div>" +
     "<div class='promo-card' id='pcFeatured'><h3>&#11088; Featured</h3><span class='pc-price'>$" + pricing.featured + "</span>" +
-    "<p>Premium top placement in this event's Vendor Hub with a Featured badge for the whole event.</p></div>" +
+    "<p>One 30-minute slot during an event hour you pick. Top-5 spotlight placement with a Featured badge while it runs.</p></div>" +
     "</div>" +
     "<div class='facts'><button class='bcan' id='promoCloseBtn'>Cancel</button></div></div>";
   document.getElementById("promoCloseBtn").onclick = promoCls;
   document.getElementById("pcBoost").onclick = function () { promoState.type = "boost"; renderPromoHourStep(); };
-  document.getElementById("pcFeatured").onclick = function () { promoState.type = "featured"; renderPromoCheckout(); };
+  document.getElementById("pcFeatured").onclick = function () { promoState.type = "featured"; renderPromoHourStep(); };
 }
 
 function renderPromoHourStep() {
   var v = vendors.find(function (x) { return x.id === promoState.vendorId; });
   var ev = evts.find(function (x) { return x.id === promoState.eventId; });
-  var hours = openHoursFor(ev);
+  var typeLabel = promoState.type === "boost" ? "Boost" : "Featured";
+  var hours = openHoursFor(ev, promoState.type);
   var p = document.getElementById("promoPanel");
   var grid = hours.map(function (h) {
     var label = h.status === "open" ? "Open" : h.status === "full" ? "Full" : "Closed";
     return "<button class='hourbtn" + (h.status !== "open" ? " " + h.status : "") + "' data-hour='" + h.hour + "'" + (h.status !== "open" ? " disabled" : "") + ">" + fmtHour(h.hour) + "<span class='hbstat'>" + label + "</span></button>";
   }).join("");
   p.innerHTML = "<div class='promo-step'>" +
-    "<div class='promo-head'><button class='promo-back' id='promoBackBtn'>&#8592;</button><h2>Pick an hour</h2></div>" +
-    "<p class='promo-sub'>" + escHtml(ev.t) + " — choose an open hour for " + escHtml(v.name) + "'s Boost.</p>" +
+    "<div class='promo-head'><button class='promo-back' id='promoBackBtn'>&#8592;</button><h2>&#128339; Pick an hour</h2></div>" +
+    "<p class='promo-sub'>" + escHtml(ev.t) + " — choose an open hour for " + escHtml(v.name) + "'s " + typeLabel + ".</p>" +
     "<div class='hourgrid'>" + (grid || "<p class='promo-sub'>No bookable hours are open for this event yet.</p>") + "</div>" +
     "<div class='facts'><button class='bcan' id='promoCloseBtn'>Cancel</button></div></div>";
   document.getElementById("promoCloseBtn").onclick = promoCls;
@@ -96,15 +100,18 @@ function renderPromoHourStep() {
 function renderPromoSlotStep() {
   var v = vendors.find(function (x) { return x.id === promoState.vendorId; });
   var ev = evts.find(function (x) { return x.id === promoState.eventId; });
+  var type = promoState.type;
+  var need = MIN_FREE_TO_STAY_OPEN[type];
+  var total = SLOTS_PER_HOUR[type];
   var date = nextOccurrenceDate(ev);
-  var taken = takenSlotsFor(ev.id, date, promoState.hour);
+  var taken = takenSlotsFor(ev.id, date, promoState.hour, type);
   var p = document.getElementById("promoPanel");
   function slotsHtml() {
     var out = "";
-    for (var i = 0; i < 6; i++) {
+    for (var i = 0; i < total; i++) {
       var isTaken = taken.indexOf(i) >= 0;
       var isOn = promoState.slots.indexOf(i) >= 0;
-      out += "<button class='slotbtn" + (isTaken ? " taken" : isOn ? " on" : "") + "' data-i='" + i + "'" + (isTaken ? " disabled" : "") + ">" + slotTimeLabel(promoState.hour, i) + "</button>";
+      out += "<button class='slotbtn" + (isTaken ? " taken" : isOn ? " on" : "") + "' data-i='" + i + "'" + (isTaken ? " disabled" : "") + ">" + slotTimeLabel(promoState.hour, i, type) + "</button>";
     }
     return out;
   }
@@ -114,36 +121,39 @@ function renderPromoSlotStep() {
         var i = parseInt(btn.dataset.i, 10);
         var idx = promoState.slots.indexOf(i);
         if (idx >= 0) promoState.slots.splice(idx, 1);
-        else if (promoState.slots.length < 2) promoState.slots.push(i);
+        else if (promoState.slots.length < need) promoState.slots.push(i);
         document.getElementById("slotGrid").innerHTML = slotsHtml();
         wireSlots();
-        document.getElementById("slotNextBtn").disabled = promoState.slots.length !== 2;
+        document.getElementById("slotNextBtn").disabled = promoState.slots.length !== need;
       };
     });
   }
+  var pickLabel = need === 1 ? "Pick one 30-min slot" : "Pick two 10-min slots";
+  var tapLabel = need === 1 ? "Tap one." : "Tap exactly two.";
   p.innerHTML = "<div class='promo-step'>" +
-    "<div class='promo-head'><button class='promo-back' id='promoBackBtn'>&#8592;</button><h2>Pick two 10-min slots</h2></div>" +
-    "<p class='promo-sub'>" + escHtml(ev.t) + " — " + fmtHour(promoState.hour) + " hour. Tap exactly two.</p>" +
-    "<div class='slotgrid' id='slotGrid'>" + slotsHtml() + "</div>" +
+    "<div class='promo-head'><button class='promo-back' id='promoBackBtn'>&#8592;</button><h2>&#9201; " + pickLabel + "</h2></div>" +
+    "<p class='promo-sub'>" + escHtml(ev.t) + " — " + fmtHour(promoState.hour) + " hour. " + tapLabel + "</p>" +
+    "<div class='slotgrid" + (total === 2 ? " slotgrid-2" : "") + "' id='slotGrid'>" + slotsHtml() + "</div>" +
     "<div class='facts'><button class='bcan' id='promoCloseBtn'>Cancel</button><button class='bsub' id='slotNextBtn' disabled>Continue</button></div></div>";
   document.getElementById("promoCloseBtn").onclick = promoCls;
   document.getElementById("promoBackBtn").onclick = renderPromoHourStep;
   wireSlots();
-  document.getElementById("slotNextBtn").onclick = function () { if (promoState.slots.length === 2) renderPromoCheckout(); };
+  document.getElementById("slotNextBtn").onclick = function () { if (promoState.slots.length === need) renderPromoCheckout(); };
 }
 
 function renderPromoCheckout() {
   var v = vendors.find(function (x) { return x.id === promoState.vendorId; });
   var ev = evts.find(function (x) { return x.id === promoState.eventId; });
   var pricing = getPricing();
-  var amount = promoState.type === "boost" ? pricing.boost : pricing.featured;
-  var summary = promoState.type === "boost"
-    ? ("<b>Boost</b> for " + escHtml(v.name) + " during " + escHtml(ev.t) + "<br>" + fmtHour(promoState.hour) + " hour, slots: " +
-      promoState.slots.slice().sort(function (a, b) { return a - b; }).map(function (i) { return slotTimeLabel(promoState.hour, i); }).join(" &amp; "))
-    : ("<b>Featured</b> for " + escHtml(v.name) + " in " + escHtml(ev.t) + "<br>Top placement for the whole event");
+  var type = promoState.type;
+  var amount = pricing[type];
+  var typeLabel = type === "boost" ? "Boost" : "Featured";
+  var slotWords = promoState.slots.slice().sort(function (a, b) { return a - b; }).map(function (i) { return slotTimeLabel(promoState.hour, i, type); }).join(" &amp; ");
+  var summary = "<b>" + typeLabel + "</b> for " + escHtml(v.name) + " during " + escHtml(ev.t) + "<br>" +
+    fmtHour(promoState.hour) + " hour, " + slotWords;
   var p = document.getElementById("promoPanel");
   p.innerHTML = "<div class='promo-step'>" +
-    "<div class='promo-head'><button class='promo-back' id='promoBackBtn'>&#8592;</button><h2>Checkout</h2></div>" +
+    "<div class='promo-head'><button class='promo-back' id='promoBackBtn'>&#8592;</button><h2>&#128179; Checkout</h2></div>" +
     "<div class='checkout-demo-banner'>Demo checkout — no real payment is processed. This activates the promotion in your browser only.</div>" +
     "<div class='promo-summary'>" + summary + "<br><b>Total: $" + amount + "</b></div>" +
     "<div id='promoCkErr'></div>" +
@@ -152,32 +162,46 @@ function renderPromoCheckout() {
     "<div class='facts'><button class='bcan' id='promoCloseBtn'>Cancel</button><button class='bsub' id='payBtn'>Pay $" + amount + " — Activate</button></div></div>";
   p.querySelector(".promo-step").classList.add("fi");
   document.getElementById("promoCloseBtn").onclick = promoCls;
-  document.getElementById("promoBackBtn").onclick = function () {
-    if (promoState.type === "boost") renderPromoSlotStep(); else renderPromoTypeStep();
-  };
+  document.getElementById("promoBackBtn").onclick = renderPromoSlotStep;
   document.getElementById("payBtn").onclick = function () {
     var btn = document.getElementById("payBtn");
     btn.disabled = true; btn.textContent = "Processing…";
     setTimeout(function () {
-      var result = promoState.type === "boost"
+      var result = type === "boost"
         ? reserveBoost(promoState.eventId, promoState.vendorId, promoState.hour, promoState.slots)
-        : reserveFeatured(promoState.eventId, promoState.vendorId);
+        : reserveFeatured(promoState.eventId, promoState.vendorId, promoState.hour, promoState.slots[0]);
       if (!result.ok) {
         document.getElementById("promoCkErr").innerHTML = "<div class='promo-err'>" + escHtml(result.reason) + "</div>";
         btn.disabled = false; btn.textContent = "Pay $" + amount + " — Activate";
         return;
       }
-      renderPromoSuccess();
+      renderPromoSuccess(result.booking);
     }, 500);
   };
 }
 
-function renderPromoSuccess() {
+var promoSuccessTimer = null;
+function renderPromoSuccess(booking) {
   var p = document.getElementById("promoPanel");
+  var typeLabel = booking.type === "boost" ? "Boost" : "Featured";
   p.innerHTML = "<div class='promo-step'><div class='promo-head'><h2>Promotion Active</h2></div>" +
-    "<div class='promo-ok'>Payment confirmed (demo) and your promotion is live. Check My Dashboard any time for status and countdowns.</div>" +
+    "<div class='promo-ok'>Payment confirmed (demo) — your " + typeLabel + " is booked.<br><span class='countdown' id='promoSuccessClock'>&hellip;</span></div>" +
     "<div class='facts'><button class='bsub' id='promoDoneBtn'>Done</button></div></div>";
-  document.getElementById("promoDoneBtn").onclick = function () { promoCls(); refreshOpenViewsAfterPromo(); };
+  function tick() {
+    var el = document.getElementById("promoSuccessClock");
+    if (!el) { if (promoSuccessTimer) clearInterval(promoSuccessTimer); return; }
+    var text = booking.type === "boost"
+      ? promoCountdownText(booking.vendorId, booking.eventId, "boost", "&#128640;", "Boost")
+      : promoCountdownText(booking.vendorId, booking.eventId, "featured", "&#11088;", "Featured");
+    el.innerHTML = text || "Promotion window has passed.";
+  }
+  if (promoSuccessTimer) clearInterval(promoSuccessTimer);
+  tick();
+  promoSuccessTimer = setInterval(tick, 1000);
+  document.getElementById("promoDoneBtn").onclick = function () {
+    if (promoSuccessTimer) { clearInterval(promoSuccessTimer); promoSuccessTimer = null; }
+    promoCls(); refreshOpenViewsAfterPromo();
+  };
 }
 
 /* ── Vendor Dashboard ── */
@@ -230,7 +254,7 @@ function renderVendorDashboard() {
     history.forEach(function (b) {
       var v = vendors.find(function (x) { return x.id === b.vendorId; });
       var ev = evts.find(function (x) { return x.id === b.eventId; });
-      var detail = b.type === "boost" ? (fmtHour(b.hour) + " hour, " + b.slots.length + " slots") : "Featured placement";
+      var detail = fmtHour(b.hour) + " hour, " + b.slots.length + (b.type === "boost" ? " x 10min" : " x 30min") + " slot" + (b.slots.length > 1 ? "s" : "");
       var status = b.status === "cancelled" ? "cancelled" : bookingLiveStatus(b);
       html += "<tr><td>" + new Date(b.purchasedAt).toLocaleDateString() + "</td><td>" + escHtml(v ? v.name : "?") + "</td><td>" +
         escHtml(ev ? ev.t : "?") + "</td><td>" + (b.type === "boost" ? "Boost" : "Featured") + "</td><td>" + detail + "</td><td>$" + b.amount + "</td><td>" +
@@ -250,32 +274,40 @@ function renderVendorDashboard() {
   renderDashCountdowns();
 }
 
+/* One live-countdown-or-upcoming-ETA string for a single promo type
+   (boost or featured) on a vendor+event, or "" if nothing to show. */
+function promoCountdownText(vid, eid, type, icon, label) {
+  var active = getBookings().find(function (b) { return b.vendorId === vid && b.eventId === eid && b.type === type && bookingLiveStatus(b) === "active"; });
+  if (active) {
+    var ranges = active.slots.map(function (i) { return slotRange(active.date, active.hour, i, type); });
+    var now = new Date();
+    var curRange = ranges.find(function (r) { return now >= r.start && now < r.end; });
+    if (curRange) {
+      var secs = Math.max(0, Math.floor((curRange.end - now) / 1000));
+      return icon + " " + label + " live — " + Math.floor(secs / 60) + ":" + String(secs % 60).padStart(2, "0") + " left";
+    }
+  }
+  var upcoming = getBookings().filter(function (b) { return b.vendorId === vid && b.eventId === eid && b.type === type && bookingLiveStatus(b) === "upcoming"; })
+    .sort(function (a, b) { return a.hour - b.hour; })[0];
+  if (upcoming) {
+    var r = slotRange(upcoming.date, upcoming.hour, Math.min.apply(null, upcoming.slots), type);
+    var now2 = new Date();
+    var secs2 = Math.max(0, Math.floor((r.start - now2) / 1000));
+    var hh = Math.floor(secs2 / 3600), mm = Math.floor((secs2 % 3600) / 60), ss = secs2 % 60;
+    return icon + " " + label + " in " + (hh > 0 ? hh + "h " : "") + mm + "m " + ss + "s";
+  }
+  return "";
+}
+
 function renderDashCountdowns() {
   document.querySelectorAll(".dash-cd").forEach(function (el) {
     var vid = el.dataset.vid, eid = el.dataset.eid;
-    var badges = vendorPromoBadges(vid, eid);
-    var text = "";
-    if (badges.boostActive) {
-      var activeB = getBookings().find(function (b) { return b.vendorId === vid && b.eventId === eid && b.type === "boost" && bookingLiveStatus(b) === "active"; });
-      if (activeB) {
-        var ranges = activeB.slots.map(function (i) { return slotRange(activeB.date, activeB.hour, i); });
-        var now = new Date();
-        var curRange = ranges.find(function (r) { return now >= r.start && now < r.end; });
-        if (curRange) {
-          var secs = Math.max(0, Math.floor((curRange.end - now) / 1000));
-          text = "&#128640; Boost live — " + Math.floor(secs / 60) + ":" + String(secs % 60).padStart(2, "0") + " left";
-        }
-      }
-    } else if (badges.boostUpcoming) {
-      var b = badges.boostUpcoming;
-      var r = slotRange(b.date, b.hour, Math.min.apply(null, b.slots));
-      var now2 = new Date();
-      var secs2 = Math.max(0, Math.floor((r.start - now2) / 1000));
-      var hh = Math.floor(secs2 / 3600), mm = Math.floor((secs2 % 3600) / 60), ss = secs2 % 60;
-      text = "&#128640; Boost in " + (hh > 0 ? hh + "h " : "") + mm + "m " + ss + "s";
-    }
-    if (badges.featured) text += (text ? " &middot; " : "") + "<span class='promo-badge featured'>Featured</span>";
-    el.innerHTML = text ? "<span class='countdown'>" + text + "</span>" : "<span style='font-size:11px;color:rgba(90,65,30,.5);'>No active promo</span>";
+    var parts = [];
+    var featuredText = promoCountdownText(vid, eid, "featured", "&#11088;", "Featured");
+    var boostText = promoCountdownText(vid, eid, "boost", "&#128640;", "Boost");
+    if (featuredText) parts.push(featuredText);
+    if (boostText) parts.push(boostText);
+    el.innerHTML = parts.length ? "<span class='countdown'>" + parts.join(" &middot; ") + "</span>" : "<span style='font-size:11px;color:rgba(90,65,30,.5);'>No active promo</span>";
   });
 }
 
@@ -307,9 +339,8 @@ function renderAdminBookings() {
   all.forEach(function (b) {
     var v = vendors.find(function (x) { return x.id === b.vendorId; });
     var ev = evts.find(function (x) { return x.id === b.eventId; });
-    var detail = b.type === "boost"
-      ? (b.date + " " + fmtHour(b.hour) + " hour, slots " + b.slots.slice().sort(function (a, c) { return a - c; }).map(function (i) { return slotTimeLabel(b.hour, i); }).join(", "))
-      : "Featured";
+    var detail = b.date + " " + fmtHour(b.hour) + " hour, " +
+      b.slots.slice().sort(function (a, c) { return a - c; }).map(function (i) { return slotTimeLabel(b.hour, i, b.type); }).join(", ");
     var status = b.status === "cancelled" ? "cancelled" : bookingLiveStatus(b);
     var row = document.createElement("div"); row.className = "abkrow";
     row.innerHTML = "<span style='flex:1;min-width:180px;'><b>" + escHtml(v ? v.name : "?") + "</b> &middot; " + escHtml(ev ? ev.t : "?") +

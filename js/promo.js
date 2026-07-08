@@ -15,8 +15,17 @@ var PROMO_BOOK_KEY = "promo-bookings-v1";
 var PROMO_HOURS_KEY = "promo-hours-v1";
 var MY_VENDORS_KEY = "my-vendor-ids-v1";
 
-function getPricing() { return Storage.get(PROMO_PRICE_KEY, { boost: 15, featured: 25 }); }
+function getPricing() { return Storage.get(PROMO_PRICE_KEY, { boost: 15, featured: 30 }); }
 function setPricing(p) { return Storage.set(PROMO_PRICE_KEY, p); }
+
+/* Boost sells two 10-minute slots (six per hour) inside one chosen
+   event hour. Featured sells one 30-minute slot (two per hour: :00-:30
+   or :30-:00) — same hour-picker flow, coarser granularity. Both types
+   keep their own independent slot bookkeeping per hour, so an hour can
+   be simultaneously open for Featured while full for Boost. */
+var SLOT_MIN = { boost: 10, featured: 30 };
+var SLOTS_PER_HOUR = { boost: 6, featured: 2 };
+var MIN_FREE_TO_STAY_OPEN = { boost: 2, featured: 1 };
 
 function getBookings() { return Storage.get(PROMO_BOOK_KEY, []); }
 function saveBookings(list) {
@@ -91,39 +100,39 @@ function nextOccurrenceDate(ev) {
   return d.toISOString().slice(0, 10);
 }
 
-function activeBoostBookingsFor(eventId, date, hour) {
-  return getBookings().filter(function (b) {
-    return b.eventId === eventId && b.date === date && b.hour === hour && b.type === "boost" && b.status !== "cancelled";
-  });
-}
-function takenSlotsFor(eventId, date, hour) {
+function takenSlotsFor(eventId, date, hour, type) {
   var taken = [];
-  activeBoostBookingsFor(eventId, date, hour).forEach(function (b) { taken = taken.concat(b.slots); });
+  getBookings().filter(function (b) {
+    return b.eventId === eventId && b.date === date && b.hour === hour && b.type === type && b.status !== "cancelled";
+  }).forEach(function (b) { taken = taken.concat(b.slots); });
   return taken;
 }
-function freeSlotsFor(eventId, date, hour) {
-  var taken = takenSlotsFor(eventId, date, hour);
+function freeSlotsFor(eventId, date, hour, type) {
+  var total = SLOTS_PER_HOUR[type] || 6;
+  var taken = takenSlotsFor(eventId, date, hour, type);
   var free = [];
-  for (var i = 0; i < 6; i++) if (taken.indexOf(i) < 0) free.push(i);
+  for (var i = 0; i < total; i++) if (taken.indexOf(i) < 0) free.push(i);
   return free;
 }
-function hourStatus(ev, hour) {
+function hourStatus(ev, hour, type) {
   if (closedHoursFor(ev.id).indexOf(hour) >= 0) return "closed";
   var date = nextOccurrenceDate(ev);
-  if (freeSlotsFor(ev.id, date, hour).length < 2) return "full";
+  var need = MIN_FREE_TO_STAY_OPEN[type] || 1;
+  if (freeSlotsFor(ev.id, date, hour, type).length < need) return "full";
   return "open";
 }
-function openHoursFor(ev) {
-  return eventHourRange(ev).map(function (h) { return { hour: h, status: hourStatus(ev, h) }; });
+function openHoursFor(ev, type) {
+  return eventHourRange(ev).map(function (h) { return { hour: h, status: hourStatus(ev, h, type) }; });
 }
 
 function fmtHour(h) {
   var ap = h >= 12 ? "pm" : "am", h12 = h % 12 || 12;
   return h12 + ap;
 }
-function slotTimeLabel(hour, slotIndex) {
-  var startMin = slotIndex * 10;
-  var endMin = startMin + 10;
+function slotTimeLabel(hour, slotIndex, type) {
+  var mins = SLOT_MIN[type] || 10;
+  var startMin = slotIndex * mins;
+  var endMin = startMin + mins;
   function fmt(h, m) {
     var ap = h >= 12 ? "pm" : "am", h12 = h % 12 || 12;
     return h12 + ":" + (m < 10 ? "0" : "") + m + ap;
@@ -131,46 +140,41 @@ function slotTimeLabel(hour, slotIndex) {
   var endHour = hour + Math.floor(endMin / 60);
   return fmt(hour, startMin) + " - " + fmt(endHour, endMin % 60);
 }
-function slotRange(date, hour, slotIndex) {
+function slotRange(date, hour, slotIndex, type) {
+  var mins = SLOT_MIN[type] || 10;
   var start = new Date(date + "T00:00:00");
-  start.setHours(hour, slotIndex * 10, 0, 0);
-  return { start: start, end: new Date(start.getTime() + 10 * 60000) };
+  start.setHours(hour, slotIndex * mins, 0, 0);
+  return { start: start, end: new Date(start.getTime() + mins * 60000) };
 }
 
 /* ── Reserve + mock checkout ──
    Re-checks availability immediately before writing, same shape a real
    atomic backend transaction would have — the actual double-booking
-   guard, not just a UI nicety. */
-function reserveBoost(eventId, vendorId, hour, slotIdxs) {
+   guard, not just a UI nicety. reserveBoost/reserveFeatured are thin
+   named wrappers so call sites read clearly. */
+function reservePromoSlot(type, eventId, vendorId, hour, slotIdxs) {
   var ev = evts.find(function (e) { return e.id === eventId; });
   if (!ev) return { ok: false, reason: "Event not found." };
   if (closedHoursFor(eventId).indexOf(hour) >= 0) return { ok: false, reason: "That hour just closed for booking." };
   var date = nextOccurrenceDate(ev);
-  var free = freeSlotsFor(eventId, date, hour);
+  var free = freeSlotsFor(eventId, date, hour, type);
   var stillFree = slotIdxs.every(function (i) { return free.indexOf(i) >= 0; });
   if (!stillFree) return { ok: false, reason: "One of those slots was just taken by someone else. Pick another." };
   var pricing = getPricing();
   var booking = {
-    id: "bk" + Date.now() + Math.floor(Math.random() * 1000), type: "boost",
+    id: "bk" + Date.now() + Math.floor(Math.random() * 1000), type: type,
     eventId: eventId, vendorId: vendorId, date: date, hour: hour, slots: slotIdxs.slice(),
-    amount: pricing.boost, status: "paid", purchasedAt: new Date().toISOString()
+    amount: pricing[type], status: "paid", purchasedAt: new Date().toISOString()
   };
   var list = getBookings(); list.push(booking);
   if (!saveBookings(list)) return { ok: false, reason: "Storage full." };
   return { ok: true, booking: booking };
 }
-function reserveFeatured(eventId, vendorId) {
-  var ev = evts.find(function (e) { return e.id === eventId; });
-  if (!ev) return { ok: false, reason: "Event not found." };
-  var pricing = getPricing();
-  var booking = {
-    id: "bk" + Date.now() + Math.floor(Math.random() * 1000), type: "featured",
-    eventId: eventId, vendorId: vendorId, amount: pricing.featured,
-    status: "paid", purchasedAt: new Date().toISOString()
-  };
-  var list = getBookings(); list.push(booking);
-  if (!saveBookings(list)) return { ok: false, reason: "Storage full." };
-  return { ok: true, booking: booking };
+function reserveBoost(eventId, vendorId, hour, slotIdxs) {
+  return reservePromoSlot("boost", eventId, vendorId, hour, slotIdxs);
+}
+function reserveFeatured(eventId, vendorId, hour, slotIdx) {
+  return reservePromoSlot("featured", eventId, vendorId, hour, [slotIdx]);
 }
 function cancelBooking(id) {
   var list = getBookings();
@@ -179,11 +183,13 @@ function cancelBooking(id) {
   saveBookings(list);
 }
 
-/* ── Live status (drives badges + dashboard countdowns) ── */
-function boostLiveStatus(b) {
+/* ── Live status (drives badges + dashboard countdowns) ──
+   Both promo types now book real time slots, so one status function
+   covers both — the only difference is slot duration (SLOT_MIN). */
+function bookingLiveStatus(b) {
   if (b.status === "cancelled") return "cancelled";
   var now = new Date();
-  var ranges = b.slots.map(function (i) { return slotRange(b.date, b.hour, i); });
+  var ranges = b.slots.map(function (i) { return slotRange(b.date, b.hour, i, b.type); });
   var starts = ranges.map(function (r) { return r.start.getTime(); });
   var ends = ranges.map(function (r) { return r.end.getTime(); });
   var earliestStart = Math.min.apply(null, starts);
@@ -194,25 +200,21 @@ function boostLiveStatus(b) {
   if (now.getTime() >= latestEnd) return "completed";
   return "upcoming";
 }
-function featuredLiveStatus(b) {
-  if (b.status === "cancelled") return "cancelled";
-  var ev = evts.find(function (e) { return e.id === b.eventId; });
-  if (ev && ev.exp) return "completed";
-  return "active";
-}
-function bookingLiveStatus(b) { return b.type === "boost" ? boostLiveStatus(b) : featuredLiveStatus(b); }
 
 /* Badges shown wherever a vendor appears inside a specific event's
-   Vendor Hub (buildVendorHub's list, openVendorDetail). */
+   Vendor Hub (buildVendorHub's list, openVendorDetail), and for the
+   Top 10 Spotlight ranking (top 5 active-Featured, next 5 active-Boost). */
 function vendorPromoBadges(vendorId, eventId) {
   var mine = getBookings().filter(function (b) {
     return b.vendorId === vendorId && b.eventId === eventId && b.status !== "cancelled";
   });
-  var featured = mine.some(function (b) { return b.type === "featured" && bookingLiveStatus(b) !== "completed"; });
+  var featuredActive = mine.some(function (b) { return b.type === "featured" && bookingLiveStatus(b) === "active"; });
+  var featuredUpcoming = mine.filter(function (b) { return b.type === "featured" && bookingLiveStatus(b) === "upcoming"; })
+    .sort(function (a, c) { return a.hour - c.hour; })[0] || null;
   var boostActive = mine.some(function (b) { return b.type === "boost" && bookingLiveStatus(b) === "active"; });
   var boostUpcoming = mine.filter(function (b) { return b.type === "boost" && bookingLiveStatus(b) === "upcoming"; })
     .sort(function (a, c) { return a.hour - c.hour; })[0] || null;
-  return { featured: featured, boostActive: boostActive, boostUpcoming: boostUpcoming };
+  return { featured: featuredActive, featuredUpcoming: featuredUpcoming, boostActive: boostActive, boostUpcoming: boostUpcoming };
 }
 
 /* Cross-tab "real time": localStorage writes fire a `storage` event in
